@@ -1,6 +1,6 @@
 import argparse
-from src.packet_analyzer import analyze_packets
-from src.visualizations.protocol_distribution import plot_protocols
+from packet_analyzer import analyze_packets
+from visualizations.protocol_distribution import plot_protocols
 
 
 def main():
@@ -18,7 +18,7 @@ def main():
     packets = analyze_packets(args.pcap_file, filters)
 
     # Vizualizácia výsledkov ako koláčový graf
-    plot_protocols(packets["protocol_counts"])
+    plot_protocols(packets["protocol_counts"], args.pcap_file)
 
     # Výpis paketov
     print("\nFiltered Packets:\n")

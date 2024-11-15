@@ -1,7 +1,7 @@
 from scapy.all import rdpcap
 from collections import Counter
 from datetime import datetime
-from src.filters import ip_filter
+from filters import ip_filter
 
 
 def analyze_packets(file_path, filters):
