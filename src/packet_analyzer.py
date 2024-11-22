@@ -42,21 +42,11 @@ def analyze_packets(file_path, filters):
                     # Na základe nájdenia metód nájdené HTTP dáta
                     if raw_data.startswith("GET") or raw_data.startswith("POST"):
                         http_data += f"Method: {raw_data.split(' ')[0]} "
-
                         # Dáta hlavičky HTTp
                         lines = raw_data.split("\r\n")
                         for line in lines[1:]:
                             if line.startswith("Host"):
                                 http_data += f"Host: {line.split(':')[1].strip()}"
-                            elif line.startswith("User-Agent"):
-                                http_data += f"User-Agent: {line.split(':')[1].strip()}"
-                            elif line.startswith("Content-Type"):
-                                http_data += f"Content-Type: {line.split(':')[1].strip()}"
-                            elif line.startswith("Content-Length"):
-                                http_data += f"Content-Length: {line.split(':')[1].strip()}"
-                            elif line.startswith("Cookie"):
-                                http_data += f"Cookie: {line.split(':')[1].strip()}"
-
                         packet_info["payload"] = http_data if http_data else "N/A"
                     else:
                         packet_info["payload"] = "N/A"
