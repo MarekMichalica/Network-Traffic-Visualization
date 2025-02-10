@@ -125,20 +125,28 @@ def main(stdscr):
                     "python", r"two_devices.py",
                 ])
                 return
+            elif key == ord('C') or key == ord('c'):
+                stdscr.clear()
+                stdscr.refresh()
+
+                subprocess.run([
+                    "python", r"visualizations.py", args.pcap_file
+                ])
+                return
 
             elif key == ord('f') or key == ord('F'):
                 return
 
             stdscr.refresh()
 
-    if remaining_packets == 0:
-        stdscr.clear()
-        stdscr.addstr(max_y - 4, 0, "Vizualizácia paketov bola dokončená.".center(max_x))
-        stdscr.refresh()
+            if remaining_packets == 0:
+                stdscr.clear()
+                stdscr.addstr(max_y - 4, 0, "Vizualizácia paketov bola dokončená.".center(max_x))
+                stdscr.refresh()
 
-        key = stdscr.getch()
-        if key == ord('f') or key == ord('F'):
-            return
+                key = stdscr.getch()
+                if key == ord('f') or key == ord('F'):
+                    return
 
     stdscr.refresh()
 
