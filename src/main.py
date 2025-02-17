@@ -3,7 +3,7 @@ import time
 from datetime import datetime
 import curses
 import subprocess
-from packet_analyzer import analyze_packets
+from packet_analyzer import analyze_packets, interface_analyzer
 
 def clean_string(input_str):
     """Odstráni null characters a iné neplatné znaky z reťazca."""
@@ -149,7 +149,7 @@ def main(stdscr):
                 key = stdscr.getstr(max_y, 0).decode('utf-8')
                 if key == ord('f') or key == ord('F'):
                     return
-                else: wait()
+                else: time.sleep(20)
 
     stdscr.refresh()
 
