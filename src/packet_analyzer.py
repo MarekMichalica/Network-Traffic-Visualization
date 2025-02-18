@@ -122,9 +122,6 @@ def analyze_packets(file_path, filters):
         "data_usage": dict(data_usage)  # Convert defaultdict to a normal dict
     }
 def interface_analyzer(interface, packet_queue, stop_event):
-    """
-    Captures packets on the given interface and sends them to the queue.
-    """
     protocol_counts = Counter()
     data_usage = defaultdict(int)
 

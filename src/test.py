@@ -6,11 +6,11 @@ import subprocess
 import threading
 
 from datetime import datetime
-from scapy.interfaces import get_if_list
+from scapy.interfaces import get_if_list, conf
 from packet_analyzer import analyze_packets, interface_analyzer
 from main import wrap_text, clean_string
 
-def display_packets(stdscr, packet_queue, max_x, max_y):
+def display_packets(stdscr, packet_queue, max_x, max_y, interface_hard):
     captured_packets = []
 
     while True:
@@ -31,6 +31,7 @@ def display_packets(stdscr, packet_queue, max_x, max_y):
             stdscr.addstr(idx, 0, packet_str)
 
         # Display navigation menu
+        stdscr.addstr(max_y - 6, max_x // 2, interface_hard)
         stdscr.addstr(max_y - 5, max_x // 2, str(len(captured_packets)))
         stdscr.addstr(max_y - 4, 0, "MENU: A) Vizualizácia 2 zariadení podľa IP B) Filtrovanie C) Vizualizácia".center(max_x))
         stdscr.addstr(max_y - 3, 0, "D) Export (JSON/CSV) E) ŠTART/STOP zachytávania F) Koniec".center(max_x))
@@ -53,6 +54,44 @@ def display_packets(stdscr, packet_queue, max_x, max_y):
         stdscr.refresh()
 
         #time.sleep(0.1)  # Avoid high CPU usage
+
+def get_interface_mapping():
+    """ Maps raw interface names to human-readable names """
+    iface_mapping = {}
+    for iface in conf.ifaces.values():
+        iface_mapping[iface.name] = iface.description  # Human-readable name
+    return iface_mapping
+
+def select_interface(stdscr):
+    """ Allows user to select a network interface """
+    stdscr.clear()
+    stdscr.addstr(2, 0, "Dostupné sieťové rozhrania:")
+
+    interfaces = get_if_list()  # Raw interface names
+    iface_mapping = get_interface_mapping()  # Get human-readable names
+
+    # Display interfaces with both names
+    for i, iface in enumerate(interfaces, start=3):
+        human_readable = iface_mapping.get(iface, "Neznáme rozhranie")  # Fallback if no description found
+        stdscr.addstr(i, 0, f"{i-2}) {iface} ({human_readable})")
+
+    stdscr.addstr(len(interfaces) + 4, 0, "Zadajte číslo rozhrania alebo názov:")
+    stdscr.refresh()
+
+    curses.echo()
+    interface_input = stdscr.getstr(len(interfaces) + 5, 0, 100).decode("utf-8").strip()
+    curses.noecho()
+
+    # Validate selection (must match an item in `interfaces`)
+    try:
+        interface_index = int(interface_input) - 1
+        if 0 <= interface_index < len(interfaces):
+            return interfaces[interface_index]  # Return raw interface name
+    except ValueError:
+        if interface_input in interfaces:
+            return interface_input  # Return raw interface name
+
+    return None  # Invalid selection
 
 def main(stdscr):
     stdscr.clear()
@@ -83,41 +122,31 @@ def main(stdscr):
             args.pcap = stdscr.getstr(3, 0, 100).decode("utf-8").strip()
             curses.noecho()
         elif key == ord('2'):
-            stdscr.clear()
-            stdscr.addstr(2, 0, "Dostupné sieťové rozhrania:")
-            interfaces = get_if_list()
-
-            for i, iface in enumerate(interfaces, start=3):
-                stdscr.addstr(i, 0, f"{i-2}) {iface}")
-
-            stdscr.addstr(len(interfaces) + 4, 0, "Zadajte číslo rozhrania alebo názov:")
-            stdscr.refresh()
-            curses.echo()
-            interface_input = stdscr.getstr(len(interfaces) + 5, 0, 100).decode("utf-8").strip()
-            curses.noecho()
-
-            try:
-                interface_index = int(interface_input) - 1
-                if 0 <= interface_index < len(interfaces):
-                    args.interface = interfaces[interface_index]
-                else:
-                    args.interface = interface_input
-            except ValueError:
-                args.interface = interface_input
-
+            args.interface = select_interface(stdscr)
+            if not args.interface:
+                stdscr.addstr(10, 0, "Neplatná voľba. Stlačte ľubovoľnú klávesu na ukončenie.")
+                stdscr.refresh()
+                stdscr.getch()
+                return
         else:
             return
 
+    args.interface = r"\Device\NPF_{ED870D6D-CF56-4ACA-BDB0-4A69805E037A}"
+
     if args.interface:
-        capture_thread = threading.Thread(target=interface_analyzer, args=(args.interface, packet_queue, stop_event), daemon=True)
+        capture_thread = threading.Thread(target=interface_analyzer, args=(args.interface, packet_queue, stop_event),daemon=True)
         capture_thread.start()
 
         # Display captured packets in the UI
-        display_packets(stdscr, packet_queue, max_x, max_y)
+        display_packets(stdscr, packet_queue, max_x, max_y, interface_hard = args.interface)
+        stop_event.set()
+        capture_thread.join()
 
         # Stop the packet capture when UI exits
         stop_event.set()
         capture_thread.join()
+
+    stdscr.refresh()
 
     if args.pcap:
         filters = {"ip_a": args.ip_a, "ip_b": args.ip_b} if args.ip_a or args.ip_b else None
