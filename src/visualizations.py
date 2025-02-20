@@ -1,9 +1,8 @@
 import argparse
 import curses
-import sys
-
-from packet_analyzer import analyze_packets
+from packet_handler import analyze_packets
 from visualizations.protocol_distribution import plot_protocols
+from visualizations.data_usage import plot_data_usage
 
 def get_user_input(stdscr):
     curses.echo()
@@ -19,24 +18,22 @@ def get_user_input(stdscr):
     stdscr.addstr(9, 0, "8. Geolokácia")
     stdscr.addstr(10, 0, "9. Distribúcia TTL")
     stdscr.addstr(11, 0, "10. Výber špeciálnych vizualizácií na základe protokolu")
-    stdscr.addstr(13, 0, "Zo zoznamu vyberte číslo požadovanej vizualizácie:")
+    stdscr.addstr(13, 0, "Zo zoznamu vyberte číslo požadovanej vizualizácie alebo stlačte 'q' pre ukončenie:")
     stdscr.refresh()
-    return stdscr.getstr(13, 52).decode('utf-8')
+    return stdscr.getstr(14, 0).decode('utf-8')
 
 def main(stdscr, pcap_file):
-    visualisation = get_user_input(stdscr)
-
-    filters = {}
-    packets = analyze_packets(pcap_file, filters)
-
-    if visualisation == "2":
-        plot_protocols(packets["protocol_counts"], pcap_file)
-
-    stdscr.clear()
-    stdscr.addstr(0, 0, "Pre ukončenie stlačte 'q'")
-    key = stdscr.getch()
-    if key == "q":
-        sys.exit(0)
+    i = 1
+    while i:
+        visualisation = get_user_input(stdscr)
+        filters = {}
+        filtered_packets = analyze_packets(pcap_file, filters)
+        if visualisation == "1":
+            plot_data_usage(filtered_packets)
+        elif visualisation == "2":
+            plot_protocols(filtered_packets["protocol_counts"], pcap_file)
+        elif visualisation == "q":
+            break
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Zobrazenie komunikácie medzi dvomi zariadeniami.")

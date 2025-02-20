@@ -1,154 +1,96 @@
 import argparse
-import time
-from datetime import datetime
 import curses
 import subprocess
-from packet_analyzer import analyze_packets
+import pyshark.tshark.tshark as tshark
+from scapy.arch.windows import get_windows_if_list
 
-def clean_string(input_str):
-    """Odstráni null characters a iné neplatné znaky z reťazca."""
-    return input_str.replace('\0', '')  # Odstráni null characters
+def list_interfaces():
+    scapy_interfaces = get_windows_if_list()
+    npf_interfaces = tshark.get_tshark_interfaces()
 
-def wrap_text(text, width):
-    """Zabalí text na riadky s maximálnou šírkou."""
-    lines = []
-    while len(text) > width:
-        split_point = text.rfind(' ', 0, width)  # Nájdeme posledný medzeru do šírky
-        if split_point == -1:  # Ak nie je medzera, orežeme na pevnú šírku
-            split_point = width
-        lines.append(text[:split_point])
-        text = text[split_point:].lstrip()  # Orezanie textu a odstránenie medzier
-    lines.append(text)  # Pridáme posledný riadok
-    return lines
+    interface_map = {}
+    for iface in scapy_interfaces:
+        npf_name = next((npf for npf in npf_interfaces if iface['guid'] in npf), None)
+        if npf_name:
+            interface_map[iface['name']] = npf_name
+
+    return interface_map
+
+def select_interface(stdscr):
+    stdscr.clear()
+    stdscr.addstr(0, 0, "Vyber sieťové rozhranie:", curses.A_BOLD)
+
+    interfaces = list_interfaces()
+    if not interfaces:
+        stdscr.addstr(2, 0, "Neboli nájdené žiadne dostupné sieťové rozhrania. Stlačte nejaké tlačidlo pre ukončenie...")
+        stdscr.refresh()
+        stdscr.getch()
+        return None
+
+    interface_list = list(interfaces.keys())
+    current_selection = 0
+
+    while True:
+        stdscr.clear()
+        stdscr.addstr(0, 0, "Vyber sieťové rozhranie:", curses.A_BOLD)
+
+        for i, iface in enumerate(interface_list):
+            if i == current_selection:
+                stdscr.addstr(i + 2, 0, f"> {iface}", curses.A_REVERSE)
+            else:
+                stdscr.addstr(i + 2, 0, f"  {iface}")
+
+        stdscr.refresh()
+        key = stdscr.getch()
+
+        if key == curses.KEY_UP and current_selection > 0:
+            current_selection -= 1
+        elif key == curses.KEY_DOWN and current_selection < len(interface_list) - 1:
+            current_selection += 1
+        elif key == ord('\n'):
+            return interfaces[interface_list[current_selection]]
 
 def main(stdscr):
-    # Vyčistenie obrazovky
     stdscr.clear()
-    max_y, max_x = stdscr.getmaxyx()
 
-    # Argumenty pre analýzu PCAP
-    parser = argparse.ArgumentParser(description="Zobrazenie komunikácie medzi dvomi zariadeniami.")
-    parser.add_argument("pcap_file", type=str, help="Cesta k súboru PCAP")
-    parser.add_argument("--ip_a", type=str, help="IP adresa prvého zariadenia (voliteľné)")
-    parser.add_argument("--ip_b", type=str, help="IP adresa druhého zariadenia (voliteľné)")
+    parser = argparse.ArgumentParser(description="Packet capture tool.")
+    parser.add_argument("--pcap_file", type=str, help="Cesta k súboru PCAP")
+    parser.add_argument("--interface", type=str, help="Sieťové rozhranie na real-time capture")
+    parser.add_argument("--ip_a", type=str, help="IP adresa A")
+    parser.add_argument("--ip_b", type=str, help="IP adresa B")
     args = parser.parse_args()
 
-    # Inicializácia filtrov
-    filters = {}
+    if not args.pcap_file and not args.interface:
+        # Add menu items
+        stdscr.addstr(0, 0, "VIZUALIZÉR DÁTOVEJ KOMUNIKÁCIE")
+        stdscr.addstr(1, 0, "1 - Analyzovať PCAP súbor")
+        stdscr.addstr(2, 0, "2 - Real-time zachytávanie paketov")
+        stdscr.refresh()
 
-    # Ak sú zadané, pridať ich ako filtre
-    if args.ip_a:
-        filters["ip_a"] = args.ip_a
-    if args.ip_b:
-        filters["ip_b"] = args.ip_b
-
-    # Ak neexistujú žiadne filtre, odovzdáme None (aby analyzér použil všetky pakety)
-    if not filters:
-        filters = None
-
-    # Analyzovanie súboru PCAP a aplikácia filtrov
-    packets = analyze_packets(args.pcap_file, filters)
-
-    # Počet paketov
-    total_packets = len(packets["filtered_packets"])
-
-    previous_timestamp = None
-    progress_bar_width = 50  # Šírka progres baru
-    current_value = 1  # Počiatočný progres
-    packet_lines = []
-    remaining_packets = total_packets
-    protocol_counts = {protocol: 0 for protocol in packets["protocol_counts"].keys()}
-
-    # Nastavenie timeoutu na 100 ms pre neblokujúce čítanie kláves
-    stdscr.timeout(100)
-    run_subprocess = False
-
-    while remaining_packets and not run_subprocess:
-        for idx, packet_info in enumerate(packets["filtered_packets"], 1):
-            current_timestamp = datetime.strptime(packet_info["timestamp"], "%Y-%m-%d %H:%M:%S")
-
-            if previous_timestamp:
-                delta_time = (current_timestamp - previous_timestamp).total_seconds()
-                time.sleep(delta_time)
-            previous_timestamp = current_timestamp
-
-            num_hashes = int((current_value / total_packets) * progress_bar_width)
-            progress_bar = f"Progress: [{'#' * num_hashes}{' ' * (progress_bar_width - num_hashes)}] {current_value}/{total_packets}"
-
+        key = stdscr.getch()
+        if key == ord('1'):
             stdscr.clear()
-
-            stdscr.addstr(1, 0, progress_bar)
-            protocol_counts[packet_info["protocol"]] += 1
-
-            protocol_y_offset = 2
-            for protocol, count in protocol_counts.items():
-                protocol_percentage = (count / total_packets) * 100
-                num_hashes_protocol = int((protocol_percentage / 100) * progress_bar_width)
-
-                protocol_bar = f"{protocol}: [{'#' * num_hashes_protocol}{' ' * (progress_bar_width - num_hashes_protocol)}] {protocol_percentage:.2f}%"
-                stdscr.addstr(protocol_y_offset, 0, protocol_bar)
-                protocol_y_offset += 1
-
-            stdscr.addstr(protocol_y_offset, 0, "# | Časová pečiatka      | Zdrojová IP     | Cieľová IP      | Protokol | Porty       | Veľkosť     | Dáta ")
-            stdscr.addstr(protocol_y_offset + 1, 0, "-" * 120)
-
-            packet_info_str = (f"{idx:<2} | {packet_info['timestamp']} | {packet_info['src_ip']:<15} | {packet_info['dst_ip']:<15} | "
-                               f"{packet_info['protocol']:<8} | {packet_info['src_port']} -> {packet_info['dst_port']} | "
-                               f"{packet_info['size']:<5} bytes | {packet_info['payload']}")
-
-            wrapped_lines = wrap_text(packet_info_str, max_x - 2)
-
-            for line in wrapped_lines:
-                if len(packet_lines) >= max_y - protocol_y_offset - 4:
-                    packet_lines.pop(0)
-
-                clean_line = clean_string(line)
-                packet_lines.append(clean_line)
-
-            for i, line in enumerate(packet_lines, start=protocol_y_offset + 2):
-                stdscr.addstr(i, 0, line)
-
-            # Aktualizácia hlášky o ukončení na spodku obrazovky
-            stdscr.addstr(max_y - 4, 0, "MENU: A) Vizualizácia 2 zariadení podľa IP B) Filtrovanie C) Vizualizácia".center(max_x))
-            stdscr.addstr(max_y - 3, 0, "D) Export (JSON/CSV) E) ŠTART/STOP zachytávania F) Koniec".center(max_x))
-
-            current_value += 1
-            remaining_packets -= 1
-
-            # Kontrola na stlačenú klávesu (non-blocking)
-            key = stdscr.getch()
-            if key == ord('A') or key == ord('a'):
-                stdscr.clear()
-                stdscr.refresh()
-
-                subprocess.run([
-                    "python", r"two_devices.py",
-                ])
-                return
-            elif key == ord('C') or key == ord('c'):
-                stdscr.clear()
-                stdscr.refresh()
-
-                subprocess.run([
-                    "python", r"visualizations.py", args.pcap_file
-                ])
-                return
-
-            elif key == ord('f') or key == ord('F'):
-                return
-
+            stdscr.addstr(2, 0, "Zadajte cestu k PCAP súboru:")
             stdscr.refresh()
-
-            if remaining_packets == 0:
-                stdscr.clear()
-                stdscr.addstr(max_y - 4, 0, "Vizualizácia paketov bola dokončená.".center(max_x))
+            curses.echo()
+            args.pcap_file = stdscr.getstr(3, 0, 100).decode("utf-8").strip()
+            curses.noecho()
+        elif key == ord('2'):
+            args.interface = select_interface(stdscr)
+            if not args.interface:
+                stdscr.addstr(10, 0, "Neplatná voľba. Stlačte ľubovoľnú klávesu na ukončenie.")
                 stdscr.refresh()
+                stdscr.getch()
+                return
+        else:
+            return
 
-                key = stdscr.getch()
-                if key == ord('f') or key == ord('F'):
-                    return
+    if args.interface:
+        curses.endwin()
+        subprocess.run(["python", "interface_sniffer.py", "--interface", args.interface])
 
-    stdscr.refresh()
+    if args.pcap_file:
+        subprocess.run(["python", "pcap_analyzer.py", args.pcap_file])
 
 if __name__ == "__main__":
     curses.wrapper(main)

@@ -1,30 +1,20 @@
-from scapy.all import rdpcap
-from collections import Counter
+from scapy.all import *
+from collections import Counter, defaultdict
 from datetime import datetime
-from filters import ip_filter
-from port_protocol import get_protocol_by_port, get_protocol_by_ip_proto
-def map_tcp_flags(flags):
-    flag_mapping = {
-        "F": "FIN",
-        "S": "SYN",
-        "R": "RST",
-        "P": "PSH",
-        "A": "ACK",
-        "U": "URG",
-        "E": "ECE",
-        "C": "CWR"
-    }
-    return [flag_mapping.get(flag, flag) for flag in flags]
+from port_protocol import get_protocol_by_port, get_protocol_by_ip_proto, map_tcp_flags
 
 def analyze_packets(file_path, filters):
     packets = rdpcap(file_path)
     protocol_counts = Counter()
     filtered_packets = []
+    data_usage = defaultdict(int)
 
     for packet in packets:
         try:
             src_ip = packet["IP"].src if packet.haslayer("IP") else None
             dst_ip = packet["IP"].dst if packet.haslayer("IP") else None
+            timestamp = datetime.fromtimestamp(float(packet.time)).strftime("%Y-%m-%d %H:%M:%S")
+            packet_size = len(packet)
 
             # Zistenie protokolu
             if packet.haslayer("IP"):
@@ -37,9 +27,9 @@ def analyze_packets(file_path, filters):
             else:
                 protocol = "Unknown"
 
-            # Uloženie informácií o pakete
+            # Store packet information
             packet_info = {
-                "timestamp": datetime.fromtimestamp(float(packet.time)).strftime("%Y-%m-%d %H:%M:%S"),
+                "timestamp": timestamp,
                 "src_ip": src_ip,
                 "dst_ip": dst_ip,
                 "protocol": protocol,
@@ -47,7 +37,7 @@ def analyze_packets(file_path, filters):
                     packet["UDP"].sport if packet.haslayer("UDP") else "N/A"),
                 "dst_port": packet["TCP"].dport if packet.haslayer("TCP") else (
                     packet["UDP"].dport if packet.haslayer("UDP") else "N/A"),
-                "size": len(packet),
+                "size": packet_size,
                 "payload": "N/A"
             }
             # Spracovanie protokolu HTTP
@@ -98,24 +88,24 @@ def analyze_packets(file_path, filters):
                 # Kombinácia dát do payload
                 packet_info["payload"] = ', '.join(tcp_payload) if tcp_payload else "N/A"
 
-            # Spracovanie ostatných protokolov alebo paketov bez špecifikovaných pravidiel
-            else:
-                # Ak je dostupná vrstva Raw, pokúsime sa zobraziť aspoň 30 znakov
-                if packet.haslayer("Raw"):
-                    raw_data = packet["Raw"].load.decode(errors="ignore")
-                    packet_info["payload"] = raw_data[:30] if raw_data else "N/A"
-                else:
-                    packet_info["payload"] = "Žiadne dáta"
+            elif packet.haslayer("Raw"):
+                raw_data = packet["Raw"].load.decode(errors="ignore")
+                packet_info["payload"] = raw_data[:30] if raw_data else "N/A"
 
+            # Store the packet
             filtered_packets.append(packet_info)
 
-            # Aktualizácia počtu protokolov
+            # Update protocol usage count
             protocol_counts[packet_info["protocol"]] += 1
 
+            # Aggregate data usage per second
+            data_usage[timestamp] += packet_size
+
         except Exception as e:
-            print(e)
+            print(f"Error processing packet: {e}")
 
     return {
         "protocol_counts": protocol_counts,
-        "filtered_packets": filtered_packets
+        "filtered_packets": filtered_packets,
+        "data_usage": dict(data_usage)
     }

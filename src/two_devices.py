@@ -1,8 +1,8 @@
 import curses
 import time
 from datetime import datetime
-from packet_analyzer import analyze_packets
-from main import wrap_text, clean_string
+from packet_handler import analyze_packets
+from pcap_analyzer import wrap_text, clean_string
 
 def draw_box(stdscr, x, width, height, content, title=None):
     max_y, max_x = stdscr.getmaxyx()
@@ -138,12 +138,12 @@ def main(stdscr):
         draw_box(stdscr, device_b_x, device_box_width, device_box_height, device_b_content, title="Zariadenie B")
         draw_box_protocol(stdscr, protocol_x, protocol_width, protocol_height, protocol_content, title=None)
 
-        if packet_info['src_ip'] == ip_a and packet_info['dst_ip'] == ip_b:
-            stdscr.addstr(max_y // 7, protocol_x - 1, "<==========")
+        if packet_info['src_ip'] == ip_b and packet_info['dst_ip'] == ip_a:
+            stdscr.addstr(max_y // 7, protocol_x - 1, ":==========")
             stdscr.addstr(max_y // 7 + 2, protocol_x - 6, "--<--")
             stdscr.addstr(max_y // 7 + 2, protocol_x + 10, "--<--")
             stdscr.addstr(max_y // 7 + 4, protocol_x - 1, "<==========")
-        elif packet_info['src_ip'] == ip_b and packet_info['dst_ip'] == ip_a:
+        elif packet_info['src_ip'] == ip_a and packet_info['dst_ip'] == ip_b:
             stdscr.addstr(max_y // 7, protocol_x - 1, "==========>")
             stdscr.addstr(max_y // 7 + 2, protocol_x - 6, "-->--")
             stdscr.addstr(max_y // 7 + 2, protocol_x + 10, "-->--")
