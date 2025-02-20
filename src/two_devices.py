@@ -1,8 +1,8 @@
 import curses
 import time
 from datetime import datetime
-from packet_analyzer import analyze_packets
-from main import wrap_text, clean_string
+from packet_handler import analyze_packets
+from pcap_analyzer import wrap_text, clean_string
 
 def draw_box(stdscr, x, width, height, content, title=None):
     max_y, max_x = stdscr.getmaxyx()

@@ -48,3 +48,16 @@ def get_protocol_by_ip_proto(ip_proto):
 def get_protocol_by_port(port):
     """Získaj protokol na základe portu."""
     return port_to_protocol.get(port, "Unknown")
+
+def map_tcp_flags(flags):
+    flag_mapping = {
+        "F": "FIN",
+        "S": "SYN",
+        "R": "RST",
+        "P": "PSH",
+        "A": "ACK",
+        "U": "URG",
+        "E": "ECE",
+        "C": "CWR"
+    }
+    return [flag_mapping.get(flag, flag) for flag in flags]

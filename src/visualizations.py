@@ -1,6 +1,6 @@
 import argparse
 import curses
-from packet_analyzer import analyze_packets
+from packet_handler import analyze_packets
 from visualizations.protocol_distribution import plot_protocols
 from visualizations.data_usage import plot_data_usage
 
