@@ -136,7 +136,7 @@ def main(stdscr):
                 stdscr.refresh()
 
                 subprocess.run([
-                    "python", r"visualizations.py", args.pcap_file
+                    "python", r"static_visualisations_selector.py", args.pcap_file
                 ])
                 return
 
