@@ -1,3 +1,7 @@
 /.idea
 src/live_visualisations/GeoLite2-City.mmdb
 src/live_visualisations/test.py
+src/filters/__pychache__
+src/live_visualisations/__pychache__
+src/static_visualisations/__pychache__
+src/__pychache__
