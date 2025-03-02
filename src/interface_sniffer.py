@@ -75,7 +75,7 @@ def sniff_packets(interface, packet_queue, stop_event, sniffing_event, packets_j
         write_packets_to_json(packets, packets_json_file)
         write_data_usage_to_json(data_usage, data_usage_json_file)
 
-def display_packets(stdscr, interface):
+def display_packets(stdscr, interface, filters):
     stdscr.clear()
     max_y, max_x = stdscr.getmaxyx()
 
