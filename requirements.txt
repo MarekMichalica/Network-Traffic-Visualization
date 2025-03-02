@@ -1,3 +1,5 @@
 scapy
 matplotlib
 windows-curses
+pyshark
+pyshark
