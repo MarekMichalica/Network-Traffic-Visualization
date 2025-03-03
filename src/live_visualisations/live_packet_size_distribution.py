@@ -4,12 +4,6 @@ import numpy as np
 from matplotlib.animation import FuncAnimation
 
 def plot_packet_size_distribution(json_file):
-    """
-    Plot the distribution of packet sizes.
-
-    Args:
-        json_file (str): Path to the JSON file containing packet data
-    """
     fig, ax = plt.subplots(figsize=(10, 6))
 
     def animate(i):
