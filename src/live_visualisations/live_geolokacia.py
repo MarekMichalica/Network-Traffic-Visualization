@@ -4,17 +4,10 @@ from matplotlib.animation import FuncAnimation
 import geoip2.database
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-import numpy as np
 from collections import Counter
 import os
 
 def plot_ip_geolocation(json_file):
-    """
-    Visualize the geolocation of IP addresses in the network traffic.
-
-    Args:
-        json_file (str): Path to the JSON file containing packet data
-    """
     # Check if GeoLite2 database exists
     db_path = 'GeoLite2-City.mmdb'
     if not os.path.exists(db_path):

@@ -2,15 +2,8 @@ import json
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from collections import defaultdict
-import numpy as np
 
 def plot_flow_analysis(json_file):
-    """
-    Analyze and visualize network flows (connections between source-destination pairs).
-
-    Args:
-        json_file (str): Path to the JSON file containing packet data
-    """
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))
 
     def animate(i):

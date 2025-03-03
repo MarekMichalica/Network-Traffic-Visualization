@@ -4,13 +4,6 @@ from matplotlib.animation import FuncAnimation
 from collections import Counter
 
 def plot_top_senders_receivers(json_file, top_n=5):
-    """
-    Plot the top N senders and receivers based on captured packets.
-
-    Args:
-        json_file (str): Path to the JSON file containing packet data
-        top_n (int): Number of top senders/receivers to display
-    """
     # Create figure with two subplots
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
