@@ -1,31 +1,106 @@
-from scapy.all import *
+import pyshark
 from collections import Counter, defaultdict
-from datetime import datetime
-from port_protocol import get_protocol_by_port, get_protocol_by_ip_proto, map_tcp_flags
 
-def analyze_packets(file_path, filters):
-    packets = rdpcap(file_path)
+def analyze_packets(file_path, filters=None):
+    cap = pyshark.FileCapture(file_path)
+
     protocol_counts = Counter()
     filtered_packets = []
     data_usage = defaultdict(int)
 
-    for packet in packets:
+    for packet in cap:
         try:
-            src_ip = packet["IP"].src if packet.haslayer("IP") else None
-            dst_ip = packet["IP"].dst if packet.haslayer("IP") else None
-            timestamp = datetime.fromtimestamp(float(packet.time)).strftime("%Y-%m-%d %H:%M:%S")
-            packet_size = len(packet)
-
-            # Zistenie protokolu
-            if packet.haslayer("IP"):
-                # Protokol z IP hlavičky
-                protocol = get_protocol_by_ip_proto(packet["IP"].proto)
-            elif packet.haslayer("TCP") or packet.haslayer("UDP"):
-                # Protokol na základe portu (pre TCP a UDP)
-                port = packet["TCP"].dport if packet.haslayer("TCP") else packet["UDP"].dport
-                protocol = get_protocol_by_port(port)
+            # Check if packet has IP layer
+            if hasattr(packet, 'ip'):
+                src_ip = packet.ip.src
+                dst_ip = packet.ip.dst
             else:
-                protocol = "Unknown"
+                # Skip non-IP packets if we're filtering by IP
+                if filters and (filters.get('ip_a') or filters.get('ip_b')):
+                    continue
+                src_ip = "N/A"
+                dst_ip = "N/A"
+
+            # Apply IP filters if specified
+            if filters:
+                if filters.get('ip_a') and filters.get('ip_b'):
+                    # Filter for communication between two specific IPs
+                    if not ((src_ip == filters['ip_a'] and dst_ip == filters['ip_b']) or
+                            (src_ip == filters['ip_b'] and dst_ip == filters['ip_a'])):
+                        continue
+                elif filters.get('ip_a'):
+                    # Filter for packets from or to a specific IP
+                    if src_ip != filters['ip_a'] and dst_ip != filters['ip_a']:
+                        continue
+                elif filters.get('ip_b'):
+                    # Filter for packets from or to a specific IP
+                    if src_ip != filters['ip_b'] and dst_ip != filters['ip_b']:
+                        continue
+
+            # Get timestamp
+            timestamp = packet.sniff_time.strftime("%Y-%m-%d %H:%M:%S")
+            packet_size = int(packet.length) if hasattr(packet, 'length') else 0
+
+            # Determine protocol - use the highest layer or transport layer
+            protocol = packet.highest_layer
+
+            # Get port information for TCP or UDP
+            src_port = "N/A"
+            dst_port = "N/A"
+            payload = "N/A"
+
+            # Get transport layer info if available
+            if hasattr(packet, 'tcp'):
+                src_port = packet.tcp.srcport
+                dst_port = packet.tcp.dstport
+
+                # Get TCP flags if available
+                tcp_payload = []
+                if hasattr(packet.tcp, 'flags'):
+                    flags = []
+                    flag_value = int(packet.tcp.flags, 16)
+                    if flag_value & 0x01: flags.append("FIN")
+                    if flag_value & 0x02: flags.append("SYN")
+                    if flag_value & 0x04: flags.append("RST")
+                    if flag_value & 0x08: flags.append("PSH")
+                    if flag_value & 0x10: flags.append("ACK")
+                    if flag_value & 0x20: flags.append("URG")
+                    tcp_payload.append(f"[{','.join(flags)}]")
+
+                # Get sequence and acknowledgment numbers
+                if hasattr(packet.tcp, 'seq'):
+                    tcp_payload.append(f"seq={packet.tcp.seq}")
+                if hasattr(packet.tcp, 'ack'):
+                    tcp_payload.append(f"ack={packet.tcp.ack}")
+                if hasattr(packet.tcp, 'window_size'):
+                    tcp_payload.append(f"win={packet.tcp.window_size}")
+
+                payload = ', '.join(tcp_payload) if tcp_payload else "N/A"
+
+            elif hasattr(packet, 'udp'):
+                src_port = packet.udp.srcport
+                dst_port = packet.udp.dstport
+
+            # Specific protocol handling for better payload information
+            if protocol == 'HTTP':
+                if hasattr(packet, 'http'):
+                    http_data = ""
+                    if hasattr(packet.http, 'request_method'):
+                        http_data += f"Method: {packet.http.request_method} "
+                        if hasattr(packet.http, 'request_uri'):
+                            http_data += f"URI: {packet.http.request_uri} "
+                    if hasattr(packet.http, 'host'):
+                        http_data += f"Host: {packet.http.host}"
+                    payload = http_data if http_data else "N/A"
+
+            # Try to get payload from data layer if available
+            if payload == "N/A" and hasattr(packet, 'data'):
+                try:
+                    data_bytes = bytes.fromhex(packet.data.data)
+                    printable_chars = ''.join(chr(b) if 32 <= b <= 126 else '.' for b in data_bytes)
+                    payload = printable_chars[:30]
+                except:
+                    payload = "N/A"
 
             # Store packet information
             packet_info = {
@@ -33,72 +108,14 @@ def analyze_packets(file_path, filters):
                 "src_ip": src_ip,
                 "dst_ip": dst_ip,
                 "protocol": protocol,
-                "src_port": packet["TCP"].sport if packet.haslayer("TCP") else (
-                    packet["UDP"].sport if packet.haslayer("UDP") else "N/A"),
-                "dst_port": packet["TCP"].dport if packet.haslayer("TCP") else (
-                    packet["UDP"].dport if packet.haslayer("UDP") else "N/A"),
+                "src_port": src_port,
+                "dst_port": dst_port,
                 "size": packet_size,
-                "payload": "N/A"
+                "payload": payload
             }
-            # Spracovanie protokolu HTTP
-            if packet.haslayer("TCP") and packet["TCP"].dport == 80:
-                packet_info["protocol"] = "HTTP"
-                http_data = ""
 
-                # Kontrola existencie RAW vrstvy
-                if packet.haslayer("Raw"):
-                    raw_data = packet["Raw"].load.decode(errors="ignore")
-
-                    # Na základe nájdenia metód nájdené HTTP dáta
-                    if raw_data.startswith("GET") or raw_data.startswith("POST"):
-                        http_data += f"Method: {raw_data.split(' ')[0]} "
-                        # Dáta hlavičky HTTP
-                        lines = raw_data.split("\r\n")
-                        for line in lines[1:]:
-                            if line.startswith("Host"):
-                                http_data += f"Host: {line.split(':')[1].strip()}"
-                        packet_info["payload"] = http_data if http_data else "N/A"
-                    else:
-                        packet_info["payload"] = "N/A"
-                else:
-                    packet_info["payload"] = "Žiadne dáta"
-
-            # Spracovanie protokolu TCP
-            elif packet.haslayer("TCP"):
-                tcp_layer = packet["TCP"]
-                tcp_payload = []
-
-                # Pridanie TCP vlajok
-                if tcp_layer.flags:
-                    flags = map_tcp_flags(tcp_layer.sprintf("%TCP.flags%"))
-                    tcp_payload.append(f"[{','.join(flags)}]")
-
-                # Sekvenčné číslo
-                if tcp_layer.seq:
-                    tcp_payload.append(f"seq={tcp_layer.seq}")
-
-                # Číslo potvrdenia
-                if tcp_layer.ack:
-                    tcp_payload.append(f"ack={tcp_layer.ack}")
-
-                # Veľkosť okna
-                if tcp_layer.window:
-                    tcp_payload.append(f"win={tcp_layer.window}")
-
-                # Kombinácia dát do payload
-                packet_info["payload"] = ', '.join(tcp_payload) if tcp_payload else "N/A"
-
-            elif packet.haslayer("Raw"):
-                raw_data = packet["Raw"].load.decode(errors="ignore")
-                packet_info["payload"] = raw_data[:30] if raw_data else "N/A"
-
-            # Store the packet
             filtered_packets.append(packet_info)
-
-            # Update protocol usage count
-            protocol_counts[packet_info["protocol"]] += 1
-
-            # Aggregate data usage per second
+            protocol_counts[protocol] += 1
             data_usage[timestamp] += packet_size
 
         except Exception as e:

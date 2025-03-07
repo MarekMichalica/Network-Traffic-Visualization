@@ -110,7 +110,7 @@ def main(stdscr):
                 stdscr.addstr(i, 0, line)
 
             # Aktualizácia hlášky o ukončení na spodku obrazovky
-            stdscr.addstr(max_y - 5, 0, str(remaining_packets))
+            stdscr.addstr(max_y - 5, 0, str(remaining_packets).center(max_x))
             stdscr.addstr(max_y - 4, 0, "MENU: A) Vizualizácia 2 zariadení podľa IP B) Filtrovanie C) Vizualizácia".center(max_x))
             stdscr.addstr(max_y - 3, 0, "D) Export (JSON/CSV) E) ŠTART/STOP zachytávania F) Koniec".center(max_x))
 
