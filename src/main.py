@@ -61,29 +61,66 @@ def main(stdscr):
     args = parser.parse_args()
 
     if not args.pcap_file and not args.interface:
-        # Add menu items
-        stdscr.addstr(0, 0, "VIZUALIZÉR DÁTOVEJ KOMUNIKÁCIE")
-        stdscr.addstr(1, 0, "1 - Analyzovať PCAP súbor")
-        stdscr.addstr(2, 0, "2 - Real-time zachytávanie paketov")
-        stdscr.refresh()
+        # Set up curses for arrow key navigation
+        curses.curs_set(0)  # Hide cursor
+        curses.noecho()
+        curses.cbreak()
+        stdscr.keypad(True)  # Enable special keys like arrows
 
-        key = stdscr.getch()
-        if key == ord('1'):
+        menu_items = ["Analyzovať PCAP súbor", "Real-time zachytávanie paketov"]
+        current_selection = 0
+
+        # Function to draw the menu
+        def draw_menu():
             stdscr.clear()
-            stdscr.addstr(2, 0, "Zadajte cestu k PCAP súboru:")
+            stdscr.addstr(0, 0, "VIZUALIZÉR DÁTOVEJ KOMUNIKÁCIE")
+
+            for i, item in enumerate(menu_items):
+                if i == current_selection:
+                    stdscr.attron(curses.A_REVERSE)  # Highlight selected item
+                    stdscr.addstr(i + 1, 0, f"> {item}")
+                    stdscr.attroff(curses.A_REVERSE)
+                else:
+                    stdscr.addstr(i + 1, 0, f"  {item}")
+
+            stdscr.addstr(len(menu_items) + 2, 0, "Použite šípky hore/dole na navigáciu a Enter pre výber")
             stdscr.refresh()
-            curses.echo()
-            args.pcap_file = stdscr.getstr(3, 0, 100).decode("utf-8").strip()
-            curses.noecho()
-        elif key == ord('2'):
-            args.interface = select_interface(stdscr)
-            if not args.interface:
-                stdscr.addstr(10, 0, "Neplatná voľba. Stlačte ľubovoľnú klávesu na ukončenie.")
-                stdscr.refresh()
-                stdscr.getch()
-                return
-        else:
-            return
+
+        # Initial drawing of the menu
+        draw_menu()
+
+        # Main menu loop
+        while True:
+            key = stdscr.getch()
+
+            if key == curses.KEY_UP and current_selection > 0:
+                current_selection -= 1
+            elif key == curses.KEY_DOWN and current_selection < len(menu_items) - 1:
+                current_selection += 1
+            elif key == curses.KEY_ENTER or key in [10, 13]:  # Enter key
+                if current_selection == 0:  # PCAP file analysis
+                    stdscr.clear()
+                    stdscr.addstr(2, 0, "Zadajte cestu k PCAP súboru:")
+                    stdscr.refresh()
+                    curses.echo()
+                    curses.curs_set(1)  # Show cursor for text input
+                    args.pcap_file = stdscr.getstr(3, 0, 100).decode("utf-8").strip()
+                    curses.noecho()
+                    curses.curs_set(0)  # Hide cursor again
+                    break
+                elif current_selection == 1:  # Real-time capture
+                    args.interface = select_interface(stdscr)
+                    if not args.interface:
+                        stdscr.clear()
+                        stdscr.addstr(2, 0, "Neplatná voľba. Stlačte Enter na návrat do menu.")
+                        stdscr.refresh()
+                        stdscr.getch()
+                        draw_menu()
+                        continue
+                    break
+
+            # For any other key press, just redraw the menu (essentially do nothing)
+            draw_menu()
 
     if args.interface:
         curses.endwin()
@@ -91,6 +128,5 @@ def main(stdscr):
 
     if args.pcap_file:
         subprocess.run(["python", "pcap_analyzer.py", args.pcap_file])
-
 if __name__ == "__main__":
     curses.wrapper(main)
