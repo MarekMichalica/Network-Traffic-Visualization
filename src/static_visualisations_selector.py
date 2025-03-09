@@ -1,9 +1,17 @@
 import argparse
 import curses
+import pcap_analyzer
 
-from packet_handler import analyze_packets
 from static_visualisations.static_protocol_distribution import plot_protocols
 from static_visualisations.static_data_usage import plot_data_usage
+from static_visualisations.static_top_senders_receivers import plot_top_senders_receivers
+from static_visualisations.static_network_topology import plot_network_topology
+from static_visualisations.static_packet_size_distribution import plot_packet_size_distribution
+from static_visualisations.static_flow_analysis import plot_flow_analysis
+from static_visualisations.static_traffic_heatmap import plot_traffic_heatmap
+#from static_visualisations.static_geolocation import plot_geolocation
+#from static_visualisations.static_ttl_distribution import plot_ttl_distribution
+
 
 def select_visualization(stdscr):
     visualizations = [
@@ -31,7 +39,8 @@ def select_visualization(stdscr):
             else:
                 stdscr.addstr(i + 2, 0, f"  {i + 1}. {vis}")
 
-        stdscr.addstr(len(visualizations) + 4, 0, "Použite šípky na výber vizualizácie a stlačte ENTER. Stlačte 'q' pre ukončenie.")
+        stdscr.addstr(len(visualizations) + 4, 0,
+                      "Použite šípky na výber vizualizácie a stlačte ENTER. Stlačte 'q' pre ukončenie.")
         stdscr.refresh()
 
         key = stdscr.getch()
@@ -45,6 +54,7 @@ def select_visualization(stdscr):
         elif key == ord('q'):  # Quit option
             return "q"
 
+
 def main(stdscr, pcap_file):
     while True:
         visualisation = select_visualization(stdscr)
@@ -52,12 +62,34 @@ def main(stdscr, pcap_file):
             break  # Exit on 'q'
 
         filters = {}
-        filtered_packets = analyze_packets(pcap_file, filters)
+        filtered_packets = pcap_analyzer.analyze_packets(pcap_file, filters)
+
+        # Temporarily exit curses mode to display the plot
+        curses.endwin()
 
         if visualisation == "1":
-            plot_data_usage(filtered_packets)
+            plot_data_usage(filtered_packets, pcap_file)
         elif visualisation == "2":
             plot_protocols(filtered_packets["protocol_counts"], pcap_file)
+        elif visualisation == "3":
+            plot_top_senders_receivers(filtered_packets, pcap_file)
+        elif visualisation == "4":
+            plot_network_topology(filtered_packets, pcap_file)
+        elif visualisation == "5":
+            plot_packet_size_distribution(filtered_packets, pcap_file)
+        elif visualisation == "6":
+            plot_flow_analysis(filtered_packets, pcap_file)
+        elif visualisation == "7":
+            plot_traffic_heatmap(filtered_packets, pcap_file)
+#        elif visualisation == "8":
+#            plot_geolocation(filtered_packets, pcap_file)
+#       elif visualisation == "9":
+#            plot_ttl_distribution(filtered_packets, pcap_file)
+
+        # Reinitialize curses after plot is closed
+        stdscr = curses.initscr()
+        curses.curs_set(0)
+        stdscr.keypad(True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Zobrazenie komunikácie medzi dvomi zariadeniami.")

@@ -9,7 +9,6 @@ import json
 import os
 
 from pcap_analyzer import clean_string, wrap_text
-from file_export import export_menu
 
 def write_packets_to_json(packets, json_file):
     # Create directory if it doesn't exist
@@ -273,12 +272,6 @@ def display_packets(stdscr, interface, filters):
             )
             stdscr.refresh()
         elif key == ord('D') or key == ord('d'):
-            # Launch the export script in a new console
-            subprocess.Popen(
-                ["python", "export_launcher.py", "--json_file", packets_json_file, "--interface", interface],
-                creationflags=subprocess.CREATE_NEW_CONSOLE
-            )
-            # Continue with the main program
             stdscr.refresh()
         elif key == ord('E') or key == ord('e'):
             if sniffing_event.is_set():
@@ -294,6 +287,10 @@ def display_packets(stdscr, interface, filters):
         elif key == ord('f') or key == ord('F'):
             stop_event.set()
             sniff_thread.join()
+
+            write_packets_to_json([], packets_json_file)
+            write_data_usage_to_json({}, data_usage_json_file)
+
             stdscr.addstr(max_y - 3, 0, "Zachytávanie zastavené.".center(max_x))
             stdscr.refresh()
             return
