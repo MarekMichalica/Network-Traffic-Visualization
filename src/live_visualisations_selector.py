@@ -1,6 +1,5 @@
 import argparse
 import curses
-import json
 import os
 
 from live_visualisations.live_plot_protocols import plot_protocols
@@ -9,7 +8,6 @@ from live_visualisations.live_top_senders_recievers import plot_top_senders_rece
 from live_visualisations.live_topology import plot_network_topology
 from live_visualisations.live_packet_size_distribution import plot_packet_size_distribution
 from live_visualisations.live_flow_analysis import plot_flow_analysis
-from live_visualisations.live_geolokacia import plot_ip_geolocation
 
 def select_visualization(stdscr):
     visualizations = [
@@ -20,7 +18,6 @@ def select_visualization(stdscr):
         "Distribúcia veľkosti paketov",
         "Analýza tokov",
         "Tepelná mapa prevádzky",
-        "Geolokácia",
         "Distribúcia TTL",
         "Výber špeciálnych vizualizácií na základe protokolu"
     ]
@@ -51,12 +48,6 @@ def select_visualization(stdscr):
             return str(current_selection + 1)  # Return the selected visualization number
         elif key == ord('q'):  # Quit option
             return "q"
-
-def load_packets_from_json(json_file):
-    with open(json_file, 'r') as f:
-        data = json.load(f)  # Load the entire JSON data
-        return data['packets']  # Return the list of packets
-
 def ensure_directory_exists(directory):
     if not os.path.exists(directory):
         os.makedirs(directory)
@@ -69,26 +60,10 @@ def main(stdscr, json_file):
         visualisation = select_visualization(stdscr)
         if visualisation == "q":
             break  # Exit on 'q'
-
-        packets = load_packets_from_json(json_file)
-
         if visualisation == "1":
             plot_data_usage(r"live_visualisations/data_usage.json")
         elif visualisation == "2":
-            # Protocol distribution
-            filtered_packets = {
-                "protocol_counts": {}
-            }
-            # Populate filtered_packets based on your JSON data
-            for packet in packets:
-                if isinstance(packet, dict):
-                    protocol = packet['protocol']
-                    # Update protocol counts
-                    if protocol in filtered_packets["protocol_counts"]:
-                        filtered_packets["protocol_counts"][protocol] += 1
-                    else:
-                        filtered_packets["protocol_counts"][protocol] = 1
-            plot_protocols(filtered_packets["protocol_counts"], json_file)
+            plot_protocols(json_file)
         elif visualisation == "3":
             # Top senders and receivers
             plot_top_senders_receivers(json_file)
@@ -101,10 +76,6 @@ def main(stdscr, json_file):
         elif visualisation == "6":
             # Flow analysis
             plot_flow_analysis(json_file)
-        elif visualisation == "8":
-            # Geolocation
-            plot_ip_geolocation(json_file)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Zobrazenie komunikácie medzi dvomi zariadeniami.")

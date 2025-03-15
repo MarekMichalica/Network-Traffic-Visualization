@@ -7,11 +7,8 @@ from static_visualisations.static_data_usage import plot_data_usage
 from static_visualisations.static_top_senders_receivers import plot_top_senders_receivers
 from static_visualisations.static_network_topology import plot_network_topology
 from static_visualisations.static_packet_size_distribution import plot_packet_size_distribution
-from static_visualisations.static_flow_analysis import plot_flow_analysis
+from static_visualisations.static_flow_analysis import analyze_flows
 from static_visualisations.static_traffic_heatmap import plot_traffic_heatmap
-#from static_visualisations.static_geolocation import plot_geolocation
-#from static_visualisations.static_ttl_distribution import plot_ttl_distribution
-
 
 def select_visualization(stdscr):
     visualizations = [
@@ -22,8 +19,6 @@ def select_visualization(stdscr):
         "Distribúcia veľkosti paketov",
         "Analýza tokov",
         "Tepelná mapa prevádzky",
-        "Geolokácia",
-        "Distribúcia TTL",
         "Výber špeciálnych vizualizácií na základe protokolu"
     ]
 
@@ -78,15 +73,10 @@ def main(stdscr, pcap_file):
         elif visualisation == "5":
             plot_packet_size_distribution(filtered_packets, pcap_file)
         elif visualisation == "6":
-            plot_flow_analysis(filtered_packets, pcap_file)
+            analyze_flows(filtered_packets, pcap_file)
         elif visualisation == "7":
             plot_traffic_heatmap(filtered_packets, pcap_file)
-#        elif visualisation == "8":
-#            plot_geolocation(filtered_packets, pcap_file)
-#       elif visualisation == "9":
-#            plot_ttl_distribution(filtered_packets, pcap_file)
 
-        # Reinitialize curses after plot is closed
         stdscr = curses.initscr()
         curses.curs_set(0)
         stdscr.keypad(True)

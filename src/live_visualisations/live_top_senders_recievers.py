@@ -18,7 +18,7 @@ def plot_top_senders_receivers(json_file, top_n=5):
                 data = json.load(f)
                 packets = data['packets']
         except Exception as e:
-            print(f"Error loading JSON file: {e}")
+            print(f"Error pri načítaní JSON súboru: {e}")
             return
 
         # Count IP occurrences

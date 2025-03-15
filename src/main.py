@@ -3,6 +3,7 @@ import curses
 import subprocess
 import pyshark.tshark.tshark as tshark
 from scapy.arch.windows import get_windows_if_list
+from pcap_filter import get_user_input
 
 def list_interfaces():
     scapy_interfaces = get_windows_if_list()
@@ -52,6 +53,7 @@ def select_interface(stdscr):
 
 def main(stdscr):
     stdscr.clear()
+    max_y, max_x = stdscr.getmaxyx()
 
     parser = argparse.ArgumentParser(description="Packet capture tool.")
     parser.add_argument("--pcap_file", type=str, help="Cesta k súboru PCAP")
@@ -100,13 +102,16 @@ def main(stdscr):
             elif key == curses.KEY_ENTER or key in [10, 13]:  # Enter key
                 if current_selection == 0:  # PCAP file analysis
                     stdscr.clear()
-                    stdscr.addstr(2, 0, "Zadajte cestu k PCAP súboru:")
+                    header = f"Zadajte cestu k PCAP súboru"
+                    stdscr.addstr(0, 0, header[:max_x - 1])
+                    stdscr.addstr(1, 0, "=" * min(len(header), max_x - 1))
+                    stdscr.addstr(3, 0, "Pre operačný systém Windows použite znak '\\' pre oddelenie priečinkov")
+                    stdscr.addstr(4, 0, "Pre distribúcie Linux použite znak '/' pre oddelenie priečinkov")
                     stdscr.refresh()
                     curses.echo()
                     curses.curs_set(1)  # Show cursor for text input
-                    args.pcap_file = stdscr.getstr(3, 0, 100).decode("utf-8").strip()
-                    curses.noecho()
-                    curses.curs_set(0)  # Hide cursor again
+                    args.pcap_file = get_user_input(stdscr, "", max_y, max_x)
+                    stdscr.addstr(4, 0, "Pre potvrdenie stlačte ENTER")
                     break
                 elif current_selection == 1:  # Real-time capture
                     args.interface = select_interface(stdscr)
