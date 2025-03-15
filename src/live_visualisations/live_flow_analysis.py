@@ -16,7 +16,7 @@ def plot_flow_analysis(json_file):
                 data = json.load(f)
                 packets = data['packets']
         except Exception as e:
-            print(f"Error loading JSON file: {e}")
+            print(f"Error pri načítavaní JSON súboru: {e}")
             return
 
         # Group packets by flow (src_ip, dst_ip, src_port, dst_port, protocol)

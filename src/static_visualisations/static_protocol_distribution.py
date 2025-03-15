@@ -10,24 +10,24 @@ def plot_protocols(protocol_counts, pcap_file):
         other_count = sum(count for protocol, count in sorted_protocols[10:])
         sorted_protocols = sorted_protocols[:10]
         if other_count > 0:
-            sorted_protocols.append(('Other', other_count))
+            sorted_protocols.append(('Ostatné', other_count))
 
     # Prepare data for plotting
-    labels = [protocol for protocol, _ in sorted_protocols]
-    counts = [count for _, count in sorted_protocols]
+    labels = [protocol for protocol, count in sorted_protocols]
+    counts = [count for protocol, count in sorted_protocols]
 
     # Calculate percentages
     total = sum(counts)
     percentages = [(count / total) * 100 for count in counts]
 
-    # Create figure with two subplots
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 7))
+    # Create figure with two subplots - smaller size
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
     # Create bar chart
     ax1.bar(labels, counts, color='steelblue')
-    ax1.set_title('Protocol Distribution')
-    ax1.set_xlabel('Protocol')
-    ax1.set_ylabel('Number of Packets')
+    ax1.set_title('Distribúcia protokolov')
+    ax1.set_xlabel('Protokol')
+    ax1.set_ylabel('Počet paketov')
     plt.setp(ax1.get_xticklabels(), rotation=45, ha='right')
 
     # Add count labels on top of each bar
@@ -41,13 +41,13 @@ def plot_protocols(protocol_counts, pcap_file):
 
     ax2.pie(counts, labels=[f"{label} ({percentage:.1f}%)" for label, percentage in zip(labels, percentages)],
             autopct='', startangle=90, colors=colors)
-    ax2.set_title('Protocol Distribution (%)')
+    ax2.set_title('Distribúcia protokolov (%)')
     ax2.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
 
     # Add file name to the overall title
     file_name = os.path.basename(pcap_file)
-    plt.suptitle(f"Protocol Analysis - {file_name}", fontsize=16)
+    plt.suptitle(f"Analýza protokolov - {file_name}", fontsize=14)
 
     plt.tight_layout()
-    plt.subplots_adjust(top=0.9)
+    plt.subplots_adjust(top=0.88)
     plt.show()

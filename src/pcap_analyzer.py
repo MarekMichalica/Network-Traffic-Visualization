@@ -4,6 +4,9 @@ import curses
 import subprocess
 import threading
 import pyshark
+import os
+import json
+import csv
 
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
@@ -24,9 +27,92 @@ def wrap_text(text, width):
     lines.append(text)  # Pridáme posledný riadok
     return lines
 
+def export_packets(stdscr, packet_data, count, pcap_filename):
+    # Získanie iba paketov, ktoré boli zobrazené
+    displayed_packets = packet_data[:count]
 
-def analyze_packets(file_path, filters):
-    cap = pyshark.FileCapture(file_path)
+    if not displayed_packets:
+        return "Žiadne pakety na export."
+
+    # Vytvorenie adresára pre export, ak neexistuje
+    export_dir = "exports"
+    os.makedirs(export_dir, exist_ok=True)
+
+    # Vygenerovanie základného názvu súboru podľa pôvodného PCAP a časovej pečiatky
+    base_filename = os.path.splitext(os.path.basename(pcap_filename))[0]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_export_path = os.path.join(export_dir, f"{base_filename}_{timestamp}")
+
+    # Uloženie aktuálneho stavu terminálu
+    curses.echo()
+    curses.curs_set(1)  # Zobrazenie kurzora
+
+    # Vytvorenie podokna pre výber formátu
+    max_y, max_x = stdscr.getmaxyx()
+    popup_height = 7
+    popup_width = 40
+    popup_y = max_y // 2 - popup_height // 2
+    popup_x = max_x // 2 - popup_width // 2
+
+    popup = curses.newwin(popup_height, popup_width, popup_y, popup_x)
+    popup.box()
+    popup.addstr(1, 2, "Vyberte formát exportu:")
+    popup.addstr(2, 2, "1. CSV")
+    popup.addstr(3, 2, "2. JSON")
+    popup.addstr(4, 2, "3. Oba")
+    popup.addstr(5, 2, "Voľba (1-3): ")
+    popup.refresh()
+
+    # Získanie voľby používateľa
+    choice = popup.getstr(5, 15, 1).decode('utf-8')
+
+    # Obnovenie stavu terminálu
+    curses.noecho()
+    curses.curs_set(0)  # Skrytie kurzora
+
+    # Vyčistenie popup okna
+    popup.clear()
+    popup.refresh()
+
+    # Spracovanie voľby používateľa
+    try:
+        choice = int(choice)
+        if choice < 1 or choice > 3:
+            return "Neplatná voľba. Export nebol vykonaný."
+    except ValueError:
+        return "Neplatný vstup. Export nebol vykonaný."
+
+    exported_files = []
+
+    # Export do CSV
+    if choice in [1, 3]:
+        csv_path = f"{base_export_path}_pakety.csv"
+        with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = displayed_packets[0].keys()
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            for packet in displayed_packets:
+                writer.writerow(packet)
+        exported_files.append(csv_path)
+
+    # Export do JSON
+    if choice in [2, 3]:
+        json_path = f"{base_export_path}_pakety.json"
+        with open(json_path, 'w', encoding='utf-8') as jsonfile:
+            json.dump(displayed_packets, jsonfile, indent=4)
+        exported_files.append(json_path)
+
+    # Návrat správy s výsledkom
+    if exported_files:
+        return f"Exportovaných {count} paketov do: {', '.join(exported_files)}"
+    else:
+        return "Export nebol vykonaný."
+
+def analyze_packets(file_path, filters, display_filter=None):
+    if display_filter:
+        cap = pyshark.FileCapture(file_path, display_filter=display_filter)
+    else:
+        cap = pyshark.FileCapture(file_path)
 
     protocol_counts = Counter()
     filtered_packets = []
@@ -105,19 +191,111 @@ def analyze_packets(file_path, filters):
                 src_port = packet.udp.srcport
                 dst_port = packet.udp.dstport
 
-            # Specific protocol handling for better payload information
+                # Get UDP length and checksum
+                udp_payload = []
+                if hasattr(packet.udp, 'length'):
+                    udp_payload.append(f"len={packet.udp.length}")
+                if hasattr(packet.udp, 'checksum'):
+                    udp_payload.append(f"chksum={packet.udp.checksum}")
+
+                payload = ', '.join(udp_payload) if udp_payload else "N/A"
+
             if protocol == 'HTTP':
                 if hasattr(packet, 'http'):
-                    http_data = ""
+                    http_data = []
                     if hasattr(packet.http, 'request_method'):
-                        http_data += f"Method: {packet.http.request_method} "
+                        http_data.append(f"Method: {packet.http.request_method}")
                         if hasattr(packet.http, 'request_uri'):
-                            http_data += f"URI: {packet.http.request_uri} "
+                            http_data.append(f"URI: {packet.http.request_uri}")
+                    if hasattr(packet.http, 'response_code'):
+                        http_data.append(f"Status: {packet.http.response_code}")
                     if hasattr(packet.http, 'host'):
-                        http_data += f"Host: {packet.http.host}"
-                    payload = http_data if http_data else "N/A"
+                        http_data.append(f"Host: {packet.http.host}")
+                    payload = ', '.join(http_data) if http_data else payload
 
-            # Try to get payload from data layer if available
+            # ICMP protocol
+            elif protocol == 'ICMP':
+                if hasattr(packet, 'icmp'):
+                    icmp_data = []
+                    if hasattr(packet.icmp, 'type'):
+                        icmp_data.append(f"Type: {packet.icmp.type}")
+                    if hasattr(packet.icmp, 'code'):
+                        icmp_data.append(f"Code: {packet.icmp.code}")
+                    payload = ', '.join(icmp_data) if icmp_data else payload
+
+            # DNS protocol
+            elif protocol == 'DNS':
+                if hasattr(packet, 'dns'):
+                    dns_data = []
+                    if hasattr(packet.dns, 'flags_response'):
+                        is_response = int(packet.dns.flags_response)
+                        dns_data.append("Response" if is_response else "Query")
+
+                    if hasattr(packet.dns, 'qry_name'):
+                        dns_data.append(f"Name: {packet.dns.qry_name}")
+
+                    # For responses, include answer
+                    if hasattr(packet.dns, 'flags_response') and int(packet.dns.flags_response) == 1:
+                        if hasattr(packet.dns, 'a'):
+                            dns_data.append(f"Answer: {packet.dns.a}")
+
+                    payload = ', '.join(dns_data) if dns_data else payload
+
+            # ARP protocol
+            elif protocol == 'ARP':
+                if hasattr(packet, 'arp'):
+                    arp_data = []
+                    if hasattr(packet.arp, 'opcode'):
+                        opcode = int(packet.arp.opcode)
+                        arp_data.append("who-has" if opcode == 1 else "is-at")
+
+                    if hasattr(packet.arp, 'src_proto_ipv4'):
+                        arp_data.append(f"Sender: {packet.arp.src_proto_ipv4}")
+
+                    if hasattr(packet.arp, 'dst_proto_ipv4'):
+                        arp_data.append(f"Target: {packet.arp.dst_proto_ipv4}")
+
+                    payload = ', '.join(arp_data) if arp_data else payload
+
+            # MODBUS protocol
+            elif protocol == 'MODBUS':
+                if hasattr(packet, 'modbus'):
+                    modbus_data = []
+                    if hasattr(packet.modbus, 'func_code'):
+                        modbus_data.append(f"Code: {packet.modbus.func_code}")
+                    if hasattr(packet.modbus, 'exception_code'):
+                        modbus_data.append(f"Exception: {packet.modbus.exception_code}")
+                    if hasattr(packet.modbus, 'transaction_id'):
+                        modbus_data.append(f"Transaction ID: {packet.modbus.transaction_id}")
+                    payload = ', '.join(modbus_data) if modbus_data else payload
+
+            # DNP3 protocol
+            elif protocol == 'DNP3':
+                if hasattr(packet, 'dnp3'):
+                    dnp3_data = []
+                    if hasattr(packet.dnp3, 'ctl_func'):
+                        dnp3_data.append(f"Code: {packet.dnp3.ctl_func}")
+                    if hasattr(packet.dnp3, 'al_obj'):
+                        dnp3_data.append(f"Object: {packet.dnp3.al_obj}")
+                    if hasattr(packet.dnp3, 'al_class'):
+                        dnp3_data.append(f"Class: {packet.dnp3.al_class}")
+                    payload = ', '.join(dnp3_data) if dnp3_data else payload
+
+            # S7 protocol
+            elif protocol == 'S7COMM':
+                if hasattr(packet, 's7comm'):
+                    s7_data = []
+                    if hasattr(packet.s7comm, 'param_func'):
+                        s7_data.append(f"Code: {packet.s7comm.param_func}")
+                    if hasattr(packet.s7comm, 'param_setup_rack_num'):
+                        s7_data.append(f"Rack: {packet.s7comm.param_setup_rack_num}")
+                    if hasattr(packet.s7comm, 'param_setup_slot_num'):
+                        s7_data.append(f"Slot: {packet.s7comm.param_setup_slot_num}")
+                    if hasattr(packet.s7comm, 'item_data_type'):
+                        s7_data.append(f"Data Type: {packet.s7comm.item_data_type}")
+                    payload = ', '.join(s7_data) if s7_data else payload
+
+            # Try to get payload from data layer if still not available
             if payload == "N/A" and hasattr(packet, 'data'):
                 try:
                     data_bytes = bytes.fromhex(packet.data.data)
@@ -229,6 +407,70 @@ def main(stdscr):
                 stdscr.clear()
                 stdscr.refresh()
             return
+        elif key == ord('B') or key == ord('b'):
+            # Remember the current sniffing state
+            original_sniffing_state = sniffing_event.is_set()
+            if original_sniffing_state:
+                sniffing_event.clear()  # Pause sniffing while handling filters
+
+            try:
+                # Close curses temporarily to run the filter module
+                curses.endwin()
+                subprocess.run(["python", "pcap_filter.py", args.pcap_file])
+
+                # Reinitialize curses
+                stdscr = curses.initscr()
+                curses.start_color()
+                curses.curs_set(0)
+                stdscr.timeout(100)
+
+                # Check if a filter file was created and apply it
+                filter_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "filter.txt")
+                if os.path.exists(filter_file):
+                    with open(filter_file, "r") as f:
+                        display_filter = f.read().strip()
+
+                    if display_filter:
+                        # Update status message with filter info
+                        status_msg = f"Aplikované filtre: {display_filter}"
+
+                        # Reset analysis variables
+                        protocol_counts = {}
+                        packet_lines = []
+                        scroll_position = 0
+                        current_value = 0
+                        packet_idx = 0
+                        previous_timestamp = None
+
+                        # Re-analyze with the new filter
+                        packets = analyze_packets(args.pcap_file, filters, display_filter=display_filter)
+
+                        # Update total packets and remaining packets
+                        total_packets = len(packets["filtered_packets"])
+                        remaining_packets = total_packets
+
+                        # Reset protocol counts
+                        protocol_counts = {protocol: 0 for protocol in packets["protocol_counts"].keys()}
+
+                        # Reset processing state
+                        processing_complete = False
+
+                        # Set status message
+                        status_msg = f"Aplikovaný filter: {display_filter}. Stlačte E na pozastavenie."
+
+                    # Optional: Remove filter file after applying
+                    os.remove(filter_file)
+            except Exception as e:
+                status_msg = f"Error pri aplikovaní filtrov: {str(e)}"
+
+            # Restore original sniffing state
+            if original_sniffing_state:
+                sniffing_event.set()
+
+            # Update the display with new state
+            update_display(stdscr, max_x, max_y, args.pcap_file, current_value, total_packets,
+                           progress_bar_width, protocol_counts, packet_lines, scroll_position,
+                           visible_lines, remaining_packets, status_msg)
         elif key == ord('C') or key == ord('c'):
             stdscr.clear()
             stdscr.refresh()
@@ -236,6 +478,45 @@ def main(stdscr):
                 "python", r"static_visualisations_selector.py", args.pcap_file
             ])
             return
+            # V hlavnej funkcii, po ostatných funkciách na spracovanie kláves, ale pred spracovaním paketov
+        elif key == ord('D') or key == ord('d'):
+            # Pozastavenie spracovania počas exportu
+            original_sniffing_state = sniffing_event.is_set()
+            if original_sniffing_state:
+                sniffing_event.clear()
+
+            try:
+                # Volanie funkcie exportu s výberom používateľa
+                export_msg = export_packets(stdscr, packets["filtered_packets"], packet_idx, args.pcap_file)
+
+                # Zobrazenie výsledku
+                status_msg = export_msg
+                stdscr.addstr(max_y - 2, 0, status_msg[:max_x - 1].center(max_x))
+                stdscr.refresh()
+                time.sleep(2)  # Zobrazenie správy po dobu 2 sekúnd
+
+                # Obnovenie predchádzajúcej stavovej správy
+                if processing_complete:
+                    status_msg = "Zachytávanie dokončené. Použite menu možnosti alebo F pre koniec."
+                else:
+                    status_msg = "Zachytávanie aktívne. Stlačte E na pozastavenie." if original_sniffing_state else "Zachytávanie pozastavené. Stlačte E na obnovenie. ↑/↓ pre posúvanie."
+
+            except Exception as e:
+                # Spracovanie prípadných chýb
+                status_msg = f"Chyba exportu: {str(e)}"
+                stdscr.addstr(max_y - 2, 0, status_msg[:max_x - 1].center(max_x))
+                stdscr.refresh()
+                time.sleep(2)
+
+            # Obnovenie pôvodného stavu zachytávania
+            if original_sniffing_state:
+                sniffing_event.set()
+
+            # Aktualizácia zobrazenia
+            update_display(stdscr, max_x, max_y, args.pcap_file, current_value, total_packets,
+                           progress_bar_width, protocol_counts, packet_lines, scroll_position,
+                           visible_lines, remaining_packets, status_msg)
+            continue
         elif key == curses.KEY_UP and scroll_position > 0:
             scroll_position -= 1
             update_display(stdscr, max_x, max_y, args.pcap_file, current_value, total_packets,
@@ -339,13 +620,10 @@ def update_display(stdscr, max_x, max_y, pcap_file, current_value, total_packets
     progress_bar = f"Progress: [{'#' * num_hashes}{' ' * (progress_bar_width - num_hashes)}] {current_value}/{total_packets}"
     stdscr.addstr(1, 0, progress_bar)
 
-    # Get the top 3 protocols by count
     top_protocols = sorted(protocol_counts.items(), key=lambda x: x[1], reverse=True)[:3]
-
-    # Štatistiky protokolov - len top 3
     protocol_y_offset = 2
     for protocol, count in top_protocols:
-        if count > 0:  # Only display protocols that have been seen
+        if count > 0:
             protocol_percentage = (count / current_value) * 100 if current_value > 0 else 0
             num_hashes_protocol = int((protocol_percentage / 100) * progress_bar_width)
             protocol_bar = f"{protocol}: [{'#' * num_hashes_protocol}{' ' * (progress_bar_width - num_hashes_protocol)}] {protocol_percentage:.2f}%"
@@ -353,9 +631,8 @@ def update_display(stdscr, max_x, max_y, pcap_file, current_value, total_packets
             protocol_y_offset += 1
 
     # Hlavička tabuľky paketov
-    stdscr.addstr(protocol_y_offset, 0,
-                  "# | Časová pečiatka      | Zdrojová IP     | Cieľová IP      | Protokol | Porty       | Veľkosť     | Dáta ")
-    stdscr.addstr(protocol_y_offset + 1, 0, "-" * 120)
+    stdscr.addstr(protocol_y_offset, 0, "# | Časová pečiatka      | Zdrojová IP     | Cieľová IP      | Protokol | Porty       | Veľkosť     | Dáta ")
+    stdscr.addstr(protocol_y_offset + 1, 0, "-" * 140)
 
     # Zobrazenie viditeľných paketových riadkov
     visible_end = min(len(packet_lines), scroll_position + visible_lines)
@@ -365,8 +642,7 @@ def update_display(stdscr, max_x, max_y, pcap_file, current_value, total_packets
 
     # Menu a informácie v päte
     stdscr.addstr(max_y - 5, 0, f"Zostávajúce pakety: {remaining_packets}".center(max_x))
-    stdscr.addstr(max_y - 4, 0,
-                  "MENU: A) Vizualizácia 2 zariadení podľa IP B) Filtrovanie C) Vizualizácia".center(max_x))
+    stdscr.addstr(max_y - 4, 0, "MENU: A) Vizualizácia 2 zariadení podľa IP B) Filtrovanie C) Vizualizácia".center(max_x))
     stdscr.addstr(max_y - 3, 0, "D) Export (JSON/CSV) E) ŠTART/STOP zachytávania F) Koniec".center(max_x))
     stdscr.addstr(max_y - 2, 0, status_msg.center(max_x))  # Status msg moved here, after menu items
 

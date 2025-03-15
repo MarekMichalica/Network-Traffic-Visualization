@@ -6,12 +6,13 @@ import queue
 import curses
 import subprocess
 import json
+import csv
 import os
+from datetime import datetime
 
 from pcap_analyzer import clean_string, wrap_text
 
 def write_packets_to_json(packets, json_file):
-    # Create directory if it doesn't exist
     directory = os.path.dirname(json_file)
     if directory and not os.path.exists(directory):
         os.makedirs(directory)
@@ -22,9 +23,7 @@ def write_packets_to_json(packets, json_file):
     with open(json_file, 'w') as f:
         json.dump(data, f, indent=4)
 
-
 def write_data_usage_to_json(data_usage, json_file):
-    # Create directory if it doesn't exist
     directory = os.path.dirname(json_file)
     if directory and not os.path.exists(directory):
         os.makedirs(directory)
@@ -34,6 +33,89 @@ def write_data_usage_to_json(data_usage, json_file):
     with open(json_file, 'w') as f:
         json.dump(data_usage_list, f, indent=4)
 
+def export_packets(stdscr, packet_data, interface_name):
+    if not packet_data:
+        return "Žiadne pakety na export."
+
+    # Vytvorenie adresára pre export, ak neexistuje
+    export_dir = "exports"
+    os.makedirs(export_dir, exist_ok=True)
+
+    # Vygenerovanie základného názvu súboru podľa rozhrania a časovej pečiatky
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    sanitized_interface = sanitize_filename(interface_name)
+    base_export_path = os.path.join(export_dir, f"zachytavanie_{sanitized_interface}_{timestamp}")
+
+    # Uloženie aktuálneho stavu terminálu
+    curses.echo()
+    curses.curs_set(1)  # Zobrazenie kurzora
+
+    # Vytvorenie podokna pre výber formátu
+    max_y, max_x = stdscr.getmaxyx()
+    popup_height = 7
+    popup_width = 40
+    popup_y = max_y // 2 - popup_height // 2
+    popup_x = max_x // 2 - popup_width // 2
+
+    popup = curses.newwin(popup_height, popup_width, popup_y, popup_x)
+    popup.box()
+    popup.addstr(1, 2, "Vyberte formát exportu:")
+    popup.addstr(2, 2, "1. CSV")
+    popup.addstr(3, 2, "2. JSON")
+    popup.addstr(4, 2, "3. Oba")
+    popup.addstr(5, 2, "Voľba (1-3): ")
+    popup.refresh()
+
+    # Získanie voľby používateľa
+    choice = popup.getstr(5, 15, 1).decode('utf-8')
+
+    # Obnovenie stavu terminálu
+    curses.noecho()
+    curses.curs_set(0)  # Skrytie kurzora
+
+    # Vyčistenie popup okna
+    popup.clear()
+    popup.refresh()
+
+    # Spracovanie voľby používateľa
+    try:
+        choice = int(choice)
+        if choice < 1 or choice > 3:
+            return "Neplatná voľba. Export nebol vykonaný."
+    except ValueError:
+        return "Neplatný vstup. Export nebol vykonaný."
+
+    exported_files = []
+
+    # Export do CSV
+    if choice in [1, 3]:
+        csv_path = f"{base_export_path}.csv"
+        with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = packet_data[0].keys()
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            for packet in packet_data:
+                writer.writerow(packet)
+        exported_files.append(csv_path)
+
+    # Export do JSON
+    if choice in [2, 3]:
+        json_path = f"{base_export_path}.json"
+        with open(json_path, 'w', encoding='utf-8') as jsonfile:
+            json.dump({"packets": packet_data}, jsonfile, indent=4)
+        exported_files.append(json_path)
+
+    # Návrat správy s výsledkom
+    if exported_files:
+        return f"Exportovaných {len(packet_data)} paketov do: {', '.join(exported_files)}"
+    else:
+        return "Export nebol vykonaný."
+
+def sanitize_filename(name):
+    invalid_chars = ['\\', '/', ':', '*', '?', '"', '<', '>', '|', '{', '}']
+    for char in invalid_chars:
+        name = name.replace(char, '_')
+    return name
 
 def sniff_packets(interface, packet_queue, stop_event, sniffing_event, packets_json_file, data_usage_json_file):
     asyncio.set_event_loop(asyncio.new_event_loop())
@@ -64,49 +146,110 @@ def sniff_packets(interface, packet_queue, stop_event, sniffing_event, packets_j
                     if hasattr(packet, protocol.lower()):
                         protocol_layer = getattr(packet, protocol.lower())
 
-                        # For HTTP protocol
-                        if protocol == "HTTP":
-                            if hasattr(protocol_layer, "request_uri"):
-                                payload = f"HTTP {protocol_layer.request_method} {protocol_layer.request_uri}"
-                            elif hasattr(protocol_layer, "response_code"):
-                                payload = f"HTTP {protocol_layer.response_code} {protocol_layer.response_phrase}"
+                    if protocol == 'HTTP':
+                        if hasattr(packet, 'http'):
+                            http_data = []
+                            if hasattr(packet.http, 'request_method'):
+                                http_data.append(f"Method: {packet.http.request_method}")
+                                if hasattr(packet.http, 'request_uri'):
+                                    http_data.append(f"URI: {packet.http.request_uri}")
+                            if hasattr(packet.http, 'response_code'):
+                                http_data.append(f"Status: {packet.http.response_code}")
+                            if hasattr(packet.http, 'host'):
+                                http_data.append(f"Host: {packet.http.host}")
+                            payload = ', '.join(http_data) if http_data else payload
 
-                        # For DNS protocol
-                        elif protocol == "DNS":
-                            if hasattr(protocol_layer, "qry_name"):
-                                payload = f"DNS Query: {protocol_layer.qry_name}"
+                    # ICMP protocol
+                    elif protocol == 'ICMP':
+                        if hasattr(packet, 'icmp'):
+                            icmp_data = []
+                            if hasattr(packet.icmp, 'type'):
+                                icmp_data.append(f"Type: {packet.icmp.type}")
+                            if hasattr(packet.icmp, 'code'):
+                                icmp_data.append(f"Code: {packet.icmp.code}")
+                            payload = ', '.join(icmp_data) if icmp_data else payload
 
-                        # For TLS/SSL
-                        elif protocol == "TLS" or protocol == "SSL":
-                            if hasattr(protocol_layer, "handshake_type"):
-                                handshake_types = {
-                                    "1": "Client Hello",
-                                    "2": "Server Hello",
-                                    "11": "Certificate",
-                                    "16": "Client Key Exchange"
-                                }
-                                type_num = protocol_layer.handshake_type
-                                payload = f"TLS {handshake_types.get(type_num, type_num)}"
+                    # DNS protocol
+                    elif protocol == 'DNS':
+                        if hasattr(packet, 'dns'):
+                            dns_data = []
+                            if hasattr(packet.dns, 'flags_response'):
+                                is_response = int(packet.dns.flags_response)
+                                dns_data.append("Response" if is_response else "Query")
 
-                        # For ICMP
-                        elif protocol == "ICMP":
-                            if hasattr(protocol_layer, "type"):
-                                icmp_types = {
-                                    "0": "Echo Reply",
-                                    "8": "Echo Request"
-                                }
-                                type_num = protocol_layer.type
-                                payload = f"ICMP {icmp_types.get(type_num, type_num)}"
+                            if hasattr(packet.dns, 'qry_name'):
+                                dns_data.append(f"Name: {packet.dns.qry_name}")
 
-                        # For other protocols, try to extract some meaningful data
-                        else:
-                            # Try to get a field that might contain payload data
-                            for field_name in dir(protocol_layer):
-                                if not field_name.startswith('_') and field_name not in ['field_names', 'layer_name']:
-                                    field_value = getattr(protocol_layer, field_name)
-                                    if isinstance(field_value, str) and len(field_value) > 0:
-                                        payload = f"{field_name}: {field_value}"
-                                        break
+                            # For responses, include answer
+                            if hasattr(packet.dns, 'flags_response') and int(packet.dns.flags_response) == 1:
+                                if hasattr(packet.dns, 'a'):
+                                    dns_data.append(f"Answer: {packet.dns.a}")
+
+                            payload = ', '.join(dns_data) if dns_data else payload
+
+                    # ARP protocol
+                    elif protocol == 'ARP':
+                        if hasattr(packet, 'arp'):
+                            arp_data = []
+                            if hasattr(packet.arp, 'opcode'):
+                                opcode = int(packet.arp.opcode)
+                                arp_data.append("who-has" if opcode == 1 else "is-at")
+
+                            if hasattr(packet.arp, 'src_proto_ipv4'):
+                                arp_data.append(f"Sender: {packet.arp.src_proto_ipv4}")
+
+                            if hasattr(packet.arp, 'dst_proto_ipv4'):
+                                arp_data.append(f"Target: {packet.arp.dst_proto_ipv4}")
+
+                            payload = ', '.join(arp_data) if arp_data else payload
+
+                    # MODBUS protocol
+                    elif protocol == 'MODBUS':
+                        if hasattr(packet, 'modbus'):
+                            modbus_data = []
+                            if hasattr(packet.modbus, 'func_code'):
+                                modbus_data.append(f"Code: {packet.modbus.func_code}")
+                            if hasattr(packet.modbus, 'exception_code'):
+                                modbus_data.append(f"Exception: {packet.modbus.exception_code}")
+                            if hasattr(packet.modbus, 'transaction_id'):
+                                modbus_data.append(f"Transaction ID: {packet.modbus.transaction_id}")
+                            payload = ', '.join(modbus_data) if modbus_data else payload
+
+                    # DNP3 protocol
+                    elif protocol == 'DNP3':
+                        if hasattr(packet, 'dnp3'):
+                            dnp3_data = []
+                            if hasattr(packet.dnp3, 'ctl_func'):
+                                dnp3_data.append(f"Code: {packet.dnp3.ctl_func}")
+                            if hasattr(packet.dnp3, 'al_obj'):
+                                dnp3_data.append(f"Object: {packet.dnp3.al_obj}")
+                            if hasattr(packet.dnp3, 'al_class'):
+                                dnp3_data.append(f"Class: {packet.dnp3.al_class}")
+                            payload = ', '.join(dnp3_data) if dnp3_data else payload
+
+                    # S7 protocol
+                    elif protocol == 'S7COMM':
+                        if hasattr(packet, 's7comm'):
+                            s7_data = []
+                            if hasattr(packet.s7comm, 'param_func'):
+                                s7_data.append(f"Code: {packet.s7comm.param_func}")
+                            if hasattr(packet.s7comm, 'param_setup_rack_num'):
+                                s7_data.append(f"Rack: {packet.s7comm.param_setup_rack_num}")
+                            if hasattr(packet.s7comm, 'param_setup_slot_num'):
+                                s7_data.append(f"Slot: {packet.s7comm.param_setup_slot_num}")
+                            if hasattr(packet.s7comm, 'item_data_type'):
+                                s7_data.append(f"Data Type: {packet.s7comm.item_data_type}")
+                            payload = ', '.join(s7_data) if s7_data else payload
+
+                    # For other protocols, try to extract some meaningful data
+                    else:
+                        # Try to get a field that might contain payload data
+                        for field_name in dir(protocol_layer):
+                            if not field_name.startswith('_') and field_name not in ['field_names', 'layer_name']:
+                                field_value = getattr(protocol_layer, field_name)
+                                if isinstance(field_value, str) and len(field_value) > 0:
+                                    payload = f"{field_name}: {field_value}"
+                                    break
 
                     # If no application layer data, try to get raw data
                     if payload == "N/A" and hasattr(packet, "frame_raw"):
@@ -272,6 +415,48 @@ def display_packets(stdscr, interface, filters):
             )
             stdscr.refresh()
         elif key == ord('D') or key == ord('d'):
+            # Dočasné pozastavenie zachytávania počas exportu
+            was_sniffing = sniffing_event.is_set()
+            if was_sniffing:
+                sniffing_event.clear()
+
+            try:
+                # Získanie údajov o paketoch, ktoré boli doteraz zachytené, zo súboru JSON
+                with open(packets_json_file, 'r') as f:
+                    data = json.load(f)
+                    packets_to_export = data.get("packets", [])
+
+                if not packets_to_export:
+                    status_msg = "Žiadne pakety dostupné na export."
+                else:
+                    # Volanie funkcie exportu s výberom používateľa
+                    status_msg = export_packets(stdscr, packets_to_export, interface)
+
+                # Zobrazenie výsledku
+                stdscr.addstr(max_y - 3, 0, " " * max_x)  # Vyčistenie riadku
+                stdscr.addstr(max_y - 3, 0, status_msg[:max_x - 1].center(max_x))
+                stdscr.refresh()
+
+                # Poskytnutie času na prečítanie správy
+                curses.napms(2000)  # 2 sekundy
+
+                # Obnovenie stavovej správy
+                if was_sniffing:
+                    status_msg = "Zachytávanie obnovené. Stlačte E na pozastavenie."
+                else:
+                    status_msg = "Zachytávanie pozastavené. Stlačte E na obnovenie. ↑/↓ pre posúvanie."
+
+                stdscr.addstr(max_y - 3, 0, " " * max_x)  # Vyčistenie riadku
+                stdscr.addstr(max_y - 3, 0, status_msg.center(max_x))
+
+            except Exception as e:
+                # Spracovanie prípadných chýb
+                stdscr.addstr(max_y - 3, 0, f"Chyba exportu: {str(e)[:max_x - 20]}".center(max_x))
+
+            # Pokračovanie v zachytávaní, ak bolo aktívne predtým
+            if was_sniffing:
+                sniffing_event.set()
+
             stdscr.refresh()
         elif key == ord('E') or key == ord('e'):
             if sniffing_event.is_set():
