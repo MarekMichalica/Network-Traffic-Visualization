@@ -10,17 +10,20 @@ def main(stdscr):
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Filter input")
-    parser.add_argument("pcap_file", type=str, help="Path to PCAP file")
+    parser.add_argument("pcap_file", type=str, help="Path to PCAP file or 'live' for live capture")
     args = parser.parse_args()
 
-    # Check if PCAP file exists
-    if not os.path.exists(args.pcap_file):
+    # Check if PCAP file exists, skip check if "live"
+    if args.pcap_file != "live" and not os.path.exists(args.pcap_file):
         display_message(stdscr, f"Error: File {args.pcap_file} does not exist", max_y, max_x)
         stdscr.getch()
         return
 
-    # Display header
-    header = f"Filter Input - {args.pcap_file}"
+    # Display appropriate header
+    if args.pcap_file == "live":
+        header = "Vstup pre filter - zachytávanie naživo"
+    else:
+        header = f"Vstup pre filter - {args.pcap_file}"
     stdscr.addstr(0, 0, header[:max_x - 1])
     stdscr.addstr(1, 0, "=" * min(len(header), max_x - 1))
 

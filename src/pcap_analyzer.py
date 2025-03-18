@@ -461,7 +461,7 @@ def main(stdscr):
                     # Optional: Remove filter file after applying
                     os.remove(filter_file)
             except Exception as e:
-                status_msg = f"Error pri aplikovaní filtrov: {str(e)}"
+                stdscr.addstr(max_y - 3, 0, f"Chyba pri aplikovaní filtru: {str(e)}".center(max_x))
 
             # Restore original sniffing state
             if original_sniffing_state:

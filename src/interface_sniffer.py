@@ -117,9 +117,16 @@ def sanitize_filename(name):
         name = name.replace(char, '_')
     return name
 
-def sniff_packets(interface, packet_queue, stop_event, sniffing_event, packets_json_file, data_usage_json_file):
+
+def sniff_packets(interface, packet_queue, stop_event, sniffing_event, packets_json_file, data_usage_json_file,
+                  display_filter=""):
     asyncio.set_event_loop(asyncio.new_event_loop())
-    capture = pyshark.LiveCapture(interface=interface, display_filter="ip")
+
+    # Apply the display filter if provided
+    if display_filter:
+        capture = pyshark.LiveCapture(interface=interface, display_filter=display_filter)
+    else:
+        capture = pyshark.LiveCapture(interface=interface, display_filter="ip")
     packets = []
     data_usage = {}
 
@@ -307,6 +314,8 @@ def display_packets(stdscr, interface, filters):
     sniffing_event = threading.Event()
     sniffing_event.set()
 
+    current_display_filter = ""
+
     # Use os.path.join for platform independence
     packets_json_file = os.path.join('live_visualisations', 'captured_packets.json')
     data_usage_json_file = os.path.join('live_visualisations', 'data_usage.json')
@@ -400,6 +409,62 @@ def display_packets(stdscr, interface, filters):
                 "python", r"two_devices.py",
             ])
             return
+        elif key == ord('B') or key == ord('b'):
+            # Save current sniffing state
+            was_sniffing = sniffing_event.is_set()
+            if was_sniffing:
+                sniffing_event.clear()  # Pause sniffing while filtering
+
+            try:
+                # Run the filter script in a separate process
+                curses.endwin()  # Temporarily end curses
+                subprocess.run(["python", "pcap_filter.py", "live"])
+
+                # Restart curses
+                stdscr = curses.initscr()
+                curses.noecho()
+                curses.cbreak()
+                stdscr.keypad(True)
+
+                # Check if filter file exists and read it
+                filter_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "filter.txt")
+                if os.path.exists(filter_file):
+                    with open(filter_file, "r") as f:
+                        current_display_filter = f.read().strip()
+
+                    # Restart the sniffing thread with the new filter
+                    stop_event.set()  # Stop current sniffing
+                    if sniff_thread.is_alive():
+                        sniff_thread.join()
+
+                    # Clear existing packet data
+                    all_packet_lines = []
+                    scroll_position = 0
+
+                    # Reset events
+                    stop_event = threading.Event()
+
+                    # Start new sniffing thread with the filter
+                    sniff_thread = threading.Thread(
+                        target=sniff_packets,
+                        args=(
+                        interface, packet_queue, stop_event, sniffing_event, packets_json_file, data_usage_json_file,
+                        current_display_filter),
+                        daemon=True
+                    )
+                    sniff_thread.start()
+
+                    # Display filter status
+                    stdscr.addstr(max_y - 3, 0, f"Aplikovaný filter: {current_display_filter}".center(max_x))
+                os.remove(filter_file)
+            except Exception as e:
+                stdscr.addstr(max_y - 3, 0, f"Chyba pri aplikovaní filtru: {str(e)}".center(max_x))
+
+            # Restore sniffing state
+            if was_sniffing:
+                sniffing_event.set()
+
+            stdscr.refresh()
         elif key == ord('C') or key == ord('c'):
             stdscr.clear()
             stdscr.refresh()
