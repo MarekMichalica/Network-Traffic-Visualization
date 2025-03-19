@@ -1,21 +1,70 @@
 import argparse
 import curses
 import subprocess
+import os
+import sys
 import pyshark.tshark.tshark as tshark
-from scapy.arch.windows import get_windows_if_list
-from pcap_filter import get_user_input
+
 
 def list_interfaces():
-    scapy_interfaces = get_windows_if_list()
+    """Cross-platform function to list network interfaces"""
+    interface_map = {}
+
+    # Get interfaces from tshark
     npf_interfaces = tshark.get_tshark_interfaces()
 
-    interface_map = {}
-    for iface in scapy_interfaces:
-        npf_name = next((npf for npf in npf_interfaces if iface['guid'] in npf), None)
-        if npf_name:
-            interface_map[iface['name']] = npf_name
+    if os.name == 'nt':  # Windows
+        try:
+            from scapy.arch.windows import get_windows_if_list
+            scapy_interfaces = get_windows_if_list()
+
+            # Map friendly names to tshark interface names
+            for iface in scapy_interfaces:
+                npf_name = next((npf for npf in npf_interfaces if iface.get('guid', '') in npf), None)
+                if npf_name:
+                    interface_map[iface['name']] = npf_name
+        except ImportError:
+            # Fallback if scapy's Windows-specific module isn't available
+            for iface in npf_interfaces:
+                # Extract a more readable name from the interface string
+                name = iface.split('(')[-1].split(')')[0] if '(' in iface else iface
+                interface_map[name] = iface
+    else:  # Linux/Unix
+        try:
+            import netifaces
+            # Get interfaces using netifaces
+            for iface in netifaces.interfaces():
+                # Find matching tshark interface
+                npf_name = next((npf for npf in npf_interfaces if iface in npf), None)
+                if npf_name:
+                    interface_map[iface] = npf_name
+                else:
+                    # If no match, use the interface name directly (might work with tshark)
+                    interface_map[iface] = iface
+        except ImportError:
+            # Fallback if netifaces isn't available
+            try:
+                # Try to get interfaces from /proc/net/dev on Linux
+                with open('/proc/net/dev', 'r') as f:
+                    for line in f:
+                        if ':' in line:
+                            iface = line.split(':')[0].strip()
+                            if iface != 'lo':  # Skip loopback
+                                interface_map[iface] = iface
+            except:
+                # Last resort: use tshark interfaces directly
+                for iface in npf_interfaces:
+                    name = iface.split('(')[-1].split(')')[0] if '(' in iface else iface
+                    interface_map[name] = iface
+
+    # If no interfaces found, try direct tshark output as last resort
+    if not interface_map:
+        for iface in npf_interfaces:
+            name = iface.split('(')[-1].split(')')[0] if '(' in iface else iface
+            interface_map[name] = iface
 
     return interface_map
+
 
 def select_interface(stdscr):
     stdscr.clear()
@@ -23,7 +72,8 @@ def select_interface(stdscr):
 
     interfaces = list_interfaces()
     if not interfaces:
-        stdscr.addstr(2, 0, "Neboli nájdené žiadne dostupné sieťové rozhrania. Stlačte nejaké tlačidlo pre ukončenie...")
+        stdscr.addstr(2, 0,
+                      "Neboli nájdené žiadne dostupné sieťové rozhrania. Stlačte nejaké tlačidlo pre ukončenie...")
         stdscr.refresh()
         stdscr.getch()
         return None
@@ -51,9 +101,25 @@ def select_interface(stdscr):
         elif key == ord('\n'):
             return interfaces[interface_list[current_selection]]
 
+
 def main(stdscr):
     stdscr.clear()
     max_y, max_x = stdscr.getmaxyx()
+
+    # Import pcap_filter only when needed to avoid import issues
+    try:
+        from pcap_filter import get_user_input
+    except ImportError:
+        # Simple fallback if pcap_filter module is not available
+        def get_user_input(stdscr, prompt, max_y, max_x):
+            curses.echo()
+            stdscr.addstr(2, 0, prompt)
+            input_str = ""
+            stdscr.addstr(3, 0, "> ")
+            stdscr.refresh()
+            input_str = stdscr.getstr(3, 2, max_x - 3).decode('utf-8')
+            curses.noecho()
+            return input_str
 
     parser = argparse.ArgumentParser(description="Packet capture tool.")
     parser.add_argument("--pcap_file", type=str, help="Cesta k súboru PCAP")
@@ -133,5 +199,7 @@ def main(stdscr):
 
     if args.pcap_file:
         subprocess.run(["python", "pcap_analyzer.py", args.pcap_file])
+
+
 if __name__ == "__main__":
     curses.wrapper(main)
