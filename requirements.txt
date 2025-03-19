@@ -2,6 +2,5 @@ scapy
 matplotlib
 windows-curses
 pyshark
-geoip2
 cartopy
 networkx

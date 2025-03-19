@@ -1,7 +1,9 @@
 /.idea
-src/live_visualisations/GeoLite2-City.mmdb
-src/live_visualisations/test.py
 src/filters/__pychache__
 src/live_visualisations/__pychache__
 src/static_visualisations/__pychache__
 src/__pychache__
+src/exports
+live_visualisations/captured_packets.json
+live_visualisations/data_usage.json
+data/huge.pcap
