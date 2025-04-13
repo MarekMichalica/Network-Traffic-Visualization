@@ -7,7 +7,6 @@ import pyshark.tshark.tshark as tshark
 
 
 def list_interfaces():
-    """Cross-platform function to list network interfaces"""
     interface_map = {}
 
     # Get interfaces from tshark
@@ -106,11 +105,11 @@ def main(stdscr):
     stdscr.clear()
     max_y, max_x = stdscr.getmaxyx()
 
-    # Import pcap_filter only when needed to avoid import issues
+    # Import filter only when needed to avoid import issues
     try:
-        from pcap_filter import get_user_input
+        from filter import get_user_input
     except ImportError:
-        # Simple fallback if pcap_filter module is not available
+        # Simple fallback if filter module is not available
         def get_user_input(stdscr, prompt, max_y, max_x):
             curses.echo()
             stdscr.addstr(2, 0, prompt)

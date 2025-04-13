@@ -150,69 +150,71 @@ def sniff_packets(interface, packet_queue, stop_event, sniffing_event, packets_j
 
                 try:
                     # Try to get application layer data if available
-                    if hasattr(packet, protocol.lower()):
-                        protocol_layer = getattr(packet, protocol.lower())
-
-                    if protocol == 'HTTP':
-                        if hasattr(packet, 'http'):
+                    raw_protocols = ['TLS', 'QUIC', 'LLMNR', 'DATA', 'SSDP']
+                    if protocol in raw_protocols and hasattr(packet, 'data'):
+                        protocol_layer = getattr(packet, protocol.lower(), None)
+                        if protocol_layer:
+                            for field_name in dir(protocol_layer):
+                                if not field_name.startswith('_') and field_name not in ['field_names', 'layer_name']:
+                                    try:
+                                        field_value = getattr(protocol_layer, field_name)
+                                        if isinstance(field_value, (str, bytes)):
+                                            if len(field_value) > 0:
+                                                payload = f"{field_name}: {field_value[:50]}"
+                                                break
+                                    except Exception as e:
+                                        payload = f"Error accessing {field_name}: {str(e)}"
+                    else:
+                        if protocol == "UDP" and hasattr(packet, "udp"):
+                            if hasattr(packet.udp, "length"):
+                                payload = f"Len: {packet.udp.length}"
+                        elif protocol == 'HTTP' and hasattr(packet, 'http'):
                             http_data = []
                             if hasattr(packet.http, 'request_method'):
                                 http_data.append(f"Method: {packet.http.request_method}")
-                                if hasattr(packet.http, 'request_uri'):
-                                    http_data.append(f"URI: {packet.http.request_uri}")
+                            if hasattr(packet.http, 'request_uri'):
+                                http_data.append(f"URI: {packet.http.request_uri}")
                             if hasattr(packet.http, 'response_code'):
                                 http_data.append(f"Status: {packet.http.response_code}")
                             if hasattr(packet.http, 'host'):
                                 http_data.append(f"Host: {packet.http.host}")
-                            payload = ', '.join(http_data) if http_data else payload
-
-                    # ICMP protocol
-                    elif protocol == 'ICMP':
-                        if hasattr(packet, 'icmp'):
+                            payload = ', '.join(http_data)
+                        elif protocol == 'MDNS' and hasattr(packet, 'mdns'):
+                            mdns_data = []
+                            if hasattr(packet.mdns, 'qry_name'):  # Query name
+                                mdns_data.append(f"Query Name: {packet.mdns.qry_name}")
+                            if hasattr(packet.mdns, 'qry_type'):  # Query type (e.g., A, PTR)
+                                mdns_data.append(f"Query Type: {packet.mdns.qry_type}")
+                            if hasattr(packet.mdns, 'a'):  # Answer IP Address (if present)
+                                mdns_data.append(f"Answer: {packet.mdns.a}")
+                            payload = ', '.join(mdns_data) if mdns_data else "N/A"
+                        elif protocol == 'ICMP' and hasattr(packet, 'icmp'):
                             icmp_data = []
                             if hasattr(packet.icmp, 'type'):
                                 icmp_data.append(f"Type: {packet.icmp.type}")
                             if hasattr(packet.icmp, 'code'):
                                 icmp_data.append(f"Code: {packet.icmp.code}")
-                            payload = ', '.join(icmp_data) if icmp_data else payload
-
-                    # DNS protocol
-                    elif protocol == 'DNS':
-                        if hasattr(packet, 'dns'):
+                            payload = ', '.join(icmp_data)
+                        elif protocol == 'DNS' and hasattr(packet, 'dns'):
                             dns_data = []
-                            if hasattr(packet.dns, 'flags_response'):
-                                is_response = int(packet.dns.flags_response)
-                                dns_data.append("Response" if is_response else "Query")
-
+                            is_response = str(getattr(packet.dns, 'flags_response', '0')) in ['1', 'true', 'True']
+                            dns_data.append("Response" if is_response else "Query")
                             if hasattr(packet.dns, 'qry_name'):
                                 dns_data.append(f"Name: {packet.dns.qry_name}")
-
-                            # For responses, include answer
-                            if hasattr(packet.dns, 'flags_response') and int(packet.dns.flags_response) == 1:
-                                if hasattr(packet.dns, 'a'):
-                                    dns_data.append(f"Answer: {packet.dns.a}")
-
-                            payload = ', '.join(dns_data) if dns_data else payload
-
-                    # ARP protocol
-                    elif protocol == 'ARP':
-                        if hasattr(packet, 'arp'):
+                            if is_response and hasattr(packet.dns, 'a'):
+                                dns_data.append(f"Answer: {packet.dns.a}")
+                            payload = ', '.join(dns_data)
+                        elif protocol == 'ARP' and hasattr(packet, 'arp'):
                             arp_data = []
                             if hasattr(packet.arp, 'opcode'):
                                 opcode = int(packet.arp.opcode)
                                 arp_data.append("who-has" if opcode == 1 else "is-at")
-
                             if hasattr(packet.arp, 'src_proto_ipv4'):
                                 arp_data.append(f"Sender: {packet.arp.src_proto_ipv4}")
-
                             if hasattr(packet.arp, 'dst_proto_ipv4'):
                                 arp_data.append(f"Target: {packet.arp.dst_proto_ipv4}")
-
-                            payload = ', '.join(arp_data) if arp_data else payload
-
-                    # MODBUS protocol
-                    elif protocol == 'MODBUS':
-                        if hasattr(packet, 'modbus'):
+                            payload = ', '.join(arp_data)
+                        elif protocol == 'MODBUS' and hasattr(packet, 'modbus'):
                             modbus_data = []
                             if hasattr(packet.modbus, 'func_code'):
                                 modbus_data.append(f"Code: {packet.modbus.func_code}")
@@ -220,11 +222,8 @@ def sniff_packets(interface, packet_queue, stop_event, sniffing_event, packets_j
                                 modbus_data.append(f"Exception: {packet.modbus.exception_code}")
                             if hasattr(packet.modbus, 'transaction_id'):
                                 modbus_data.append(f"Transaction ID: {packet.modbus.transaction_id}")
-                            payload = ', '.join(modbus_data) if modbus_data else payload
-
-                    # DNP3 protocol
-                    elif protocol == 'DNP3':
-                        if hasattr(packet, 'dnp3'):
+                            payload = ', '.join(modbus_data)
+                        elif protocol == 'DNP3' and hasattr(packet, 'dnp3'):
                             dnp3_data = []
                             if hasattr(packet.dnp3, 'ctl_func'):
                                 dnp3_data.append(f"Code: {packet.dnp3.ctl_func}")
@@ -232,11 +231,8 @@ def sniff_packets(interface, packet_queue, stop_event, sniffing_event, packets_j
                                 dnp3_data.append(f"Object: {packet.dnp3.al_obj}")
                             if hasattr(packet.dnp3, 'al_class'):
                                 dnp3_data.append(f"Class: {packet.dnp3.al_class}")
-                            payload = ', '.join(dnp3_data) if dnp3_data else payload
-
-                    # S7 protocol
-                    elif protocol == 'S7COMM':
-                        if hasattr(packet, 's7comm'):
+                            payload = ', '.join(dnp3_data)
+                        elif protocol == 'S7COMM' and hasattr(packet, 's7comm'):
                             s7_data = []
                             if hasattr(packet.s7comm, 'param_func'):
                                 s7_data.append(f"Code: {packet.s7comm.param_func}")
@@ -246,18 +242,50 @@ def sniff_packets(interface, packet_queue, stop_event, sniffing_event, packets_j
                                 s7_data.append(f"Slot: {packet.s7comm.param_setup_slot_num}")
                             if hasattr(packet.s7comm, 'item_data_type'):
                                 s7_data.append(f"Data Type: {packet.s7comm.item_data_type}")
-                            payload = ', '.join(s7_data) if s7_data else payload
+                            payload = ', '.join(s7_data)
+                        elif hasattr(packet, 'tcp'):
+                            src_port = packet.tcp.srcport
+                            dst_port = packet.tcp.dstport
 
-                    # For other protocols, try to extract some meaningful data
-                    else:
-                        # Try to get a field that might contain payload data
-                        for field_name in dir(protocol_layer):
-                            if not field_name.startswith('_') and field_name not in ['field_names', 'layer_name']:
-                                field_value = getattr(protocol_layer, field_name)
-                                if isinstance(field_value, str) and len(field_value) > 0:
-                                    payload = f"{field_name}: {field_value}"
-                                    break
+                            tcp_payload = []
+                            if hasattr(packet.tcp, 'flags'):
+                                try:
+                                    flag_value = int(packet.tcp.flags, 16)
+                                    flags = []
+                                    if flag_value & 0x01: flags.append("FIN")
+                                    if flag_value & 0x02: flags.append("SYN")
+                                    if flag_value & 0x04: flags.append("RST")
+                                    if flag_value & 0x08: flags.append("PSH")
+                                    if flag_value & 0x10: flags.append("ACK")
+                                    if flag_value & 0x20: flags.append("URG")
+                                    if flags:
+                                        tcp_payload.append(f"[{','.join(flags)}]")
+                                except ValueError:
+                                    pass
+                            if hasattr(packet.tcp, 'seq'):
+                                tcp_payload.append(f"seq={packet.tcp.seq}")
+                            if hasattr(packet.tcp, 'ack'):
+                                tcp_payload.append(f"ack={packet.tcp.ack}")
+                            if hasattr(packet.tcp, 'window_size'):
+                                tcp_payload.append(f"win={packet.tcp.window_size}")
 
+                            extra_tcp_info = []
+                            if hasattr(packet.tcp, 'analysis_retransmission'):
+                                extra_tcp_info.append("Retransmission")
+
+                            combined_payload = ', '.join(tcp_payload + extra_tcp_info) if (
+                                        tcp_payload or extra_tcp_info) else "N/A"
+                            payload = combined_payload
+
+                        # For other protocols, try to extract some meaningful data
+                        else:
+                            # Try to get a field that might contain payload data
+                            for field_name in dir(protocol_layer):
+                                if not field_name.startswith('_') and field_name not in ['field_names', 'layer_name']:
+                                    field_value = getattr(protocol_layer, field_name)
+                                    if isinstance(field_value, str) and len(field_value) > 0:
+                                        payload = f"{field_name}: {field_value}"
+                                        break
                     # If no application layer data, try to get raw data
                     if payload == "N/A" and hasattr(packet, "frame_raw"):
                         raw_data = packet.frame_raw.value
@@ -418,7 +446,7 @@ def display_packets(stdscr, interface, filters):
             try:
                 # Run the filter script in a separate process
                 curses.endwin()  # Temporarily end curses
-                subprocess.run(["python", "pcap_filter.py", "live"])
+                subprocess.run(["python", "filter.py", "live"])
 
                 # Restart curses
                 stdscr = curses.initscr()
