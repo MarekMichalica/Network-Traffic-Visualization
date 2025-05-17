@@ -7,3 +7,4 @@ src/exports
 live_visualisations/captured_packets.json
 live_visualisations/data_usage.json
 data/huge.pcap
+specific_visualisations/__pychache__

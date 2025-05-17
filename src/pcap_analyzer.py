@@ -7,10 +7,12 @@ import pyshark
 import os
 import json
 import csv
+import sys
 
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
+python_cmd = sys.executable
 
 def clean_string(input_str):
     return input_str.replace('\0', '')  # Odstráni null characters
@@ -151,8 +153,10 @@ def analyze_packets(file_path, filters, display_filter=None):
             timestamp = packet.sniff_time.strftime("%Y-%m-%d %H:%M:%S")
             packet_size = int(packet.length) if hasattr(packet, 'length') else 0
 
-            # Determine protocol - use the highest layer or transport layer
-            protocol = packet.highest_layer
+            if hasattr(packet, 'udp'):
+                protocol = 'UDP'
+            else:
+                protocol = packet.highest_layer
 
             # Get port information for TCP or UDP
             src_port = "N/A"
@@ -160,7 +164,7 @@ def analyze_packets(file_path, filters, display_filter=None):
             payload = "N/A"
 
             # Get transport layer info if available
-            raw_protocols = ['TLS', 'QUIC', 'LLMNR', 'DATA', 'SSDP']
+            raw_protocols = ['TLS', 'QUIC', 'LLMNR', 'SSDP']
             if protocol in raw_protocols and hasattr(packet, 'data'):
                 protocol_layer = getattr(packet, protocol.lower(), None)
                 if protocol_layer:
@@ -391,7 +395,7 @@ def main(stdscr):
         elif key == ord('A') or key == ord('a'):
             curses.endwin()  # End the curses mode
             try:
-                subprocess.run(["python3", r"two_devices.py"])
+                subprocess.run([python_cmd, r"two_devices.py"])
             except Exception as e:
                 print(f"Error running two_devices.py: {e}")  # Print to console
             finally:
@@ -408,7 +412,7 @@ def main(stdscr):
             try:
                 # Close curses temporarily to run the filter module
                 curses.endwin()
-                subprocess.run(["python3", "filter.py", args.pcap_file])
+                subprocess.run([python_cmd, "filter.py", args.pcap_file])
 
                 # Reinitialize curses
                 stdscr = curses.initscr()
@@ -464,13 +468,31 @@ def main(stdscr):
                            progress_bar_width, protocol_counts, packet_lines, scroll_position,
                            visible_lines, remaining_packets, status_msg)
         elif key == ord('C') or key == ord('c'):
-            stdscr.clear()
-            stdscr.refresh()
-            subprocess.run([
-                "python3", r"static_visualisations_selector.py", args.pcap_file
-            ])
-            return
-            # V hlavnej funkcii, po ostatných funkciách na spracovanie kláves, ale pred spracovaním paketov
+            try:
+                if os.name == 'nt':  # Windows
+                    process = subprocess.Popen(
+                        [python_cmd, "static_visualisations_selector.py", args.pcap_file],
+                        creationflags=subprocess.CREATE_NEW_CONSOLE,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE
+                    )
+                else:
+                    process = subprocess.Popen(
+                        [python_cmd, "static_visualisations_selector.py", args.pcap_file],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        start_new_session=True
+                    )
+                status_msg = "Vizualizácia spustená v novom okne. Pokračujte v práci v tomto okne."
+
+            except Exception as e:
+                status_msg = f"Chyba pri spustení vizualizácie: {str(e)}"
+
+            # Update display without changing anything else
+            update_display(stdscr, max_x, max_y, args.pcap_file, current_value, total_packets,
+                           progress_bar_width, protocol_counts, packet_lines, scroll_position,
+                           visible_lines, remaining_packets, status_msg)
+            continue  # Skip to next iteration
         elif key == ord('D') or key == ord('d'):
             # Pozastavenie spracovania počas exportu
             original_sniffing_state = sniffing_event.is_set()
@@ -556,7 +578,6 @@ def main(stdscr):
                 # Vypočítame čas medzi paketmi
                 delta_time = (current_timestamp - previous_timestamp).total_seconds()
                 # Čakáme príslušný čas, ale berieme do úvahy čas pozastavenia
-                time.sleep(max(0, delta_time))
             previous_timestamp = current_timestamp
 
             current_value += 1

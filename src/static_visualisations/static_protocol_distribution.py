@@ -16,12 +16,8 @@ def plot_protocols(protocol_counts, pcap_file):
     labels = [protocol for protocol, count in sorted_protocols]
     counts = [count for protocol, count in sorted_protocols]
 
-    # Calculate percentages
-    total = sum(counts)
-    percentages = [(count / total) * 100 for count in counts]
-
-    # Create figure with two subplots - smaller size
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    # Create figure with a single subplot
+    fig, ax1 = plt.subplots(figsize=(8, 5))
 
     # Create bar chart
     ax1.bar(labels, counts, color='steelblue')
@@ -33,16 +29,6 @@ def plot_protocols(protocol_counts, pcap_file):
     # Add count labels on top of each bar
     for i, count in enumerate(counts):
         ax1.text(i, count + (max(counts) * 0.01), str(count), ha='center')
-
-    # Create pie chart
-    colors = plt.cm.tab10.colors
-    if len(sorted_protocols) > 10:
-        colors = list(colors) + ['gray']  # Add color for 'Other'
-
-    ax2.pie(counts, labels=[f"{label} ({percentage:.1f}%)" for label, percentage in zip(labels, percentages)],
-            autopct='', startangle=90, colors=colors)
-    ax2.set_title('Distribúcia protokolov (%)')
-    ax2.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
 
     # Add file name to the overall title
     file_name = os.path.basename(pcap_file)
