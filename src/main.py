@@ -192,12 +192,14 @@ def main(stdscr):
             # For any other key press, just redraw the menu (essentially do nothing)
             draw_menu()
 
+    python_cmd = sys.executable
+
     if args.interface:
         curses.endwin()
-        subprocess.run(["python", "interface_sniffer.py", "--interface", args.interface])
+        subprocess.run([python_cmd, "interface_sniffer.py", "--interface", args.interface])
 
     if args.pcap_file:
-        subprocess.run(["python", "pcap_analyzer.py", args.pcap_file])
+        subprocess.run([python_cmd, "pcap_analyzer.py", args.pcap_file])
 
 
 if __name__ == "__main__":

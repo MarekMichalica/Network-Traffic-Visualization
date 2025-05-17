@@ -8,9 +8,12 @@ import subprocess
 import json
 import csv
 import os
-from datetime import datetime
+import sys
 
+from datetime import datetime
 from pcap_analyzer import clean_string, wrap_text
+
+python_cmd = sys.executable
 
 def write_packets_to_json(packets, json_file):
     directory = os.path.dirname(json_file)
@@ -434,7 +437,7 @@ def display_packets(stdscr, interface, filters):
             stdscr.refresh()
 
             subprocess.run([
-                "python", r"two_devices.py",
+                python_cmd, r"two_devices.py",
             ])
             return
         elif key == ord('B') or key == ord('b'):
@@ -446,7 +449,7 @@ def display_packets(stdscr, interface, filters):
             try:
                 # Run the filter script in a separate process
                 curses.endwin()  # Temporarily end curses
-                subprocess.run(["python", "filter.py", "live"])
+                subprocess.run([python_cmd, "filter.py", "live"])
 
                 # Restart curses
                 stdscr = curses.initscr()
@@ -502,10 +505,20 @@ def display_packets(stdscr, interface, filters):
                           "| Čas      | Zdrojová IP     | Cieľová IP      | Protokol | Porty          | Veľkosť      | Dáta ")
             stdscr.addstr(3, 0, "-" * 120)
 
-            subprocess.Popen(
-                ["python", "live_visualisations_selector.py", packets_json_file],
-                creationflags=subprocess.CREATE_NEW_CONSOLE
-            )
+            if os.name == 'nt':  # Windows
+                process = subprocess.Popen(
+                    [python_cmd, "live_visualisations_selector.py", packets_json_file],
+                    creationflags=subprocess.CREATE_NEW_CONSOLE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+            else:
+                process = subprocess.Popen(
+                    [python_cmd, "live_visualisations_selector.py", packets_json_file],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    start_new_session=True
+                )
             stdscr.refresh()
         elif key == ord('D') or key == ord('d'):
             # Dočasné pozastavenie zachytávania počas exportu
